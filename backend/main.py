@@ -216,6 +216,64 @@ async def get_execution_logs(limit: int = 50, db: Session = Depends(get_db)):
         logger.error(f"获取执行日志失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/accounts/fund")
+async def fund_account(to_address: str, amount: float = 1.0):
+    """从Treasury账户向新账户转账"""
+    try:
+        from .blockchain.web3_manager import get_web3_manager
+        web3_manager = get_web3_manager()
+        
+        # 验证地址格式
+        if not to_address.startswith('0x') or len(to_address) != 42:
+            raise HTTPException(status_code=400, detail="无效的以太坊地址")
+        
+        # 检查Treasury余额
+        treasury_info = web3_manager.get_account_info('treasury')
+        if treasury_info['balance_eth'] < amount:
+            raise HTTPException(status_code=400, detail="Treasury账户余额不足")
+        
+        # 执行转账
+        treasury_account = treasury_info['address']
+        treasury_private_key = web3_manager.accounts['treasury']['private_key']
+        
+        # 构建交易
+        nonce = web3_manager.w3.eth.get_transaction_count(treasury_account)
+        transaction = {
+            'nonce': nonce,
+            'to': to_address,
+            'value': web3_manager.w3.to_wei(amount, 'ether'),
+            'gas': 21000,
+            'gasPrice': web3_manager.w3.to_wei('1', 'gwei')
+        }
+        
+        # 签名并发送交易
+        signed_txn = web3_manager.w3.eth.account.sign_transaction(
+            transaction, 
+            private_key=treasury_private_key
+        )
+        tx_hash = web3_manager.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+        
+        # 等待交易确认
+        receipt = web3_manager.w3.eth.wait_for_transaction_receipt(tx_hash)
+        
+        # 获取新余额
+        new_balance = web3_manager.w3.eth.get_balance(to_address)
+        
+        return {
+            "success": True,
+            "data": {
+                "transaction_hash": tx_hash.hex(),
+                "from_address": treasury_account,
+                "to_address": to_address,
+                "amount": amount,
+                "new_balance": float(web3_manager.w3.from_wei(new_balance, 'ether'))
+            },
+            "message": f"成功向 {to_address} 转账 {amount} ETH"
+        }
+    except Exception as e:
+        logger.error(f"账户资金转账失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/test/reward")
 async def test_reward_sending(from_role: str = "treasury", to_role: str = "manager_0"):
     """测试奖励发送功能"""

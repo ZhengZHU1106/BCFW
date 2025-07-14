@@ -38,6 +38,16 @@ backend/
 │   └── data/           # 230 real attack samples from CIC-IDS2017
 ├── main.py             # FastAPI application (✅ Complete)
 └── config.py           # System configuration
+
+frontend/                # Vue 3 + Vite frontend (✅ Complete)
+├── src/
+│   ├── views/          # Main application views (Dashboard, Threats, Proposals, History)
+│   ├── components/     # Reusable components (AccountList, ThreatAlert, ProposalCard, etc.)
+│   ├── api/            # API client for backend communication
+│   ├── utils/          # Web3 utilities for account creation and balance checking
+│   └── router/         # Vue Router configuration
+├── vite.config.js      # Vite configuration with API proxy
+└── package.json        # Frontend dependencies
 ```
 
 ### System Roles & Accounts
@@ -81,6 +91,22 @@ python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ./test_phase2_fixed.sh   # Comprehensive Phase 2 testing
 ```
 
+**Frontend Development (Phase 3 Complete):**
+```bash
+# Navigate to frontend directory
+cd frontend
+
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
+# Frontend runs on http://localhost:5173 with API proxy to backend
+
+# Build for production
+npm run build
+```
+
 **API Endpoints (All Functional):**
 ```bash
 POST /api/attack/simulate        # AI threat detection simulation
@@ -90,7 +116,17 @@ POST /api/proposals/{id}/sign   # Manager proposal signing
 GET  /api/logs/detections      # Threat detection audit trail
 GET  /api/logs/executions      # Response execution logs
 POST /api/test/reward          # Test reward sending function
+POST /api/accounts/fund        # Fund account from Treasury
 ```
+
+**Frontend Features (English Interface):**
+- **Dashboard**: System status, account balances, and quick actions
+- **Threat Detection**: Real-time threat monitoring with attack simulation
+- **Proposals**: Multi-signature proposal management with role-based access
+- **History**: Comprehensive audit logs for detections and executions
+- **Account Management**: Real Web3 account creation with private key management
+- **Role Switching**: Dynamic role switching between Operator and Manager views
+- **Real Blockchain Integration**: Direct integration with Ganache for account creation and funding
 
 **Blockchain Environment:**
 - Ganache CLI with fixed mnemonic: `bulk tonight audit hover toddler orange boost twenty biology flower govern soldier`
@@ -101,10 +137,11 @@ POST /api/test/reward          # Test reward sending function
 **Project Status:**
 - ✅ Phase 1: Environment and configuration complete
 - ✅ Phase 2: Backend development complete and tested
+- ✅ Phase 3: Frontend development complete with English interface
 - ✅ AI model integration with real preprocessors (joblib-based)
 - ✅ Multi-signature proposal system with ETH rewards
 - ✅ Complete threat detection → decision → execution → audit workflow
-- 🔄 Phase 3: Frontend development (next phase)
+- ✅ Vue 3 + Vite frontend with real Web3 account creation and management
 
 ## Technical Implementation Details
 
@@ -132,5 +169,8 @@ POST /api/test/reward          # Test reward sending function
 - **No Model Training**: Use existing trained model files; all simulation uses pre-generated data
 - **Security Focus**: This is a defensive security platform - all features should enhance security monitoring and response
 - **Simulation-Based**: No real firewall/network device interaction; all responses are simulated and logged
-- **Demonstration-Oriented**: UI should clearly visualize the threat detection → decision → response → audit flow
-- **Role-Based Access**: Frontend should support switching between Operator and Manager views
+- **Demonstration-Oriented**: UI clearly visualizes the threat detection → decision → response → audit flow
+- **Role-Based Access**: Frontend supports switching between Operator and Manager views
+- **English Interface**: All user-facing text, error messages, and documentation are in English
+- **Real Web3 Integration**: Frontend creates real blockchain accounts and interacts with Ganache
+- **Security Best Practices**: Private keys are not persisted beyond session storage for security
