@@ -1,0 +1,20 @@
+{
+  "name": "blockchain-security-frontend",
+  "version": "1.0.0",
+  "description": "区块链智能安防平台前端",
+  "scripts": {
+    "dev": "echo \"前端开发服务器 - 待实现\"",
+    "build": "echo \"构建前端 - 待实现\"",
+    "preview": "echo \"预览构建 - 待实现\""
+  },
+  "dependencies": {
+    "vue": "^3.3.0",
+    "vue-router": "^4.2.0",
+    "axios": "^1.6.0",
+    "web3": "^4.0.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^4.5.0",
+    "vite": "^5.0.0"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "blockchain-security-platform",
+  "version": "1.0.0",
+  "description": "区块链智能安防平台演示原型",
+  "main": "index.js",
+  "scripts": {
+    "install-ganache": "npm install -g ganache",
+    "start-chain": "ganache --mnemonic \"bulk tonight audit hover toddler orange boost twenty biology flower govern soldier\" --blockTime 5 --host 127.0.0.1 --port 8545",
+    "start-chain-desktop": "echo \"桌面端方式: 打开Ganache桌面端，使用助记词 bulk tonight audit hover toddler orange boost twenty biology flower govern soldier\"",
+    "setup": "npm run install-ganache",
+    "dev": "concurrently \"npm run start-chain\" \"npm run backend\"",
+    "backend": "cd backend && python -m uvicorn main:app --reload",
+    "frontend": "cd frontend && npm run dev",
+    "ganache-info": "echo \"Ganache 配置信息: 助记词=bulk tonight audit hover toddler orange boost twenty biology flower govern soldier, 区块时间=5秒\"",
+    "test": "cd test && python3 verify_setup.py",
+    "test-full": "cd test && python3 test_phase1.py",
+    "test-connection": "cd test && python3 test_ganache_connection.py"
+  },
+  "keywords": ["blockchain", "security", "ai", "ganache", "ethereum"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "dependencies": {
+    "ganache": "^7.9.1"
+  }
+}
