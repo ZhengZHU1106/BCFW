@@ -62,24 +62,24 @@ const newAccounts = ref([])
 // Creation state
 const isCreating = ref(false)
 
-// 账户计数器
+// Account counter
 let accountCounter = 1
 
-// 创建新账户
+// Create new account
 const handleCreateNewAccount = async () => {
   if (isCreating.value) return
   
   isCreating.value = true
   try {
-    // 生成新账户
+    // Generate new account
     const accountData = await createNewAccount()
     
-    // 获取初始余额
+    // Get initial balance
     const balance = await getAccountBalance(accountData.address)
     
-    // 添加到列表
+    // Add to list
     const newAccount = {
-      name: `新账户 ${accountCounter}`,
+      name: `Account ${accountCounter}`,
       address: accountData.address,
       privateKey: accountData.privateKey,
       balance: balance,
@@ -90,72 +90,72 @@ const handleCreateNewAccount = async () => {
     newAccounts.value.push(newAccount)
     accountCounter++
     
-    // 保存到sessionStorage（不使用localStorage以保护私钥）
+    // Save to sessionStorage (don't use localStorage to protect private keys)
     saveToSessionStorage()
     
   } catch (error) {
-    console.error('创建账户失败:', error)
-    alert('创建账户失败，请检查Web3连接')
+    console.error('Account creation failed:', error)
+    alert('Account creation failed, please check Web3 connection')
   } finally {
     isCreating.value = false
   }
 }
 
-// 给账户充值
+// Fund account
 const fundAccount = async (account) => {
   if (account.funding) return
   
   account.funding = true
   try {
-    // 调用后端API转账
+    // Call backend API for transfer
     const result = await systemAPI.fundAccount(account.address, 1.0)
     
     if (result.success) {
       account.balance = result.data.new_balance.toFixed(4)
       account.funded = true
-      alert(`成功向 ${account.name} 充值 1 ETH`)
+      alert(`Successfully funded ${account.name} with 1 ETH`)
     }
   } catch (error) {
-    console.error('充值失败:', error)
-    alert('充值失败，请检查Treasury余额')
+    console.error('Funding failed:', error)
+    alert('Funding failed, please check Treasury balance')
   } finally {
     account.funding = false
   }
 }
 
-// 复制私钥
+// Copy private key
 const copyPrivateKey = async (account) => {
   try {
     await navigator.clipboard.writeText(account.privateKey)
     alert('Private key copied to clipboard. Please keep it safe!')
   } catch (error) {
-    console.error('复制失败:', error)
-    // 降级方案
-    prompt('请手动复制私钥：', account.privateKey)
+    console.error('Copy failed:', error)
+    // Fallback method
+    prompt('Please manually copy private key:', account.privateKey)
   }
 }
 
-// 刷新账户余额
+// Refresh account balances
 const refreshAccounts = async () => {
   for (const account of newAccounts.value) {
     try {
       const balance = await getAccountBalance(account.address)
       account.balance = balance
     } catch (error) {
-      console.error('刷新余额失败:', error)
+      console.error('Refresh balance failed:', error)
     }
   }
 }
 
-// 格式化地址
+// Format address
 const formatAddress = (address) => {
   if (!address) return '-'
   return `${address.slice(0, 6)}...${address.slice(-4)}`
 }
 
-// 保存到sessionStorage
+// Save to sessionStorage
 const saveToSessionStorage = () => {
-  // 仅保存必要信息，私钥等敏感信息在页面刷新后丢失
+  // Only save necessary info, private keys lost after page refresh
   const safeData = newAccounts.value.map(acc => ({
     name: acc.name,
     address: acc.address,
@@ -165,15 +165,15 @@ const saveToSessionStorage = () => {
   sessionStorage.setItem('accountCounter', accountCounter.toString())
 }
 
-// 从sessionStorage加载
+// Load from sessionStorage
 const loadFromSessionStorage = () => {
   const saved = sessionStorage.getItem('newAccounts')
   if (saved) {
     const safeData = JSON.parse(saved)
-    // 恢复账户信息（不包括私钥）
+    // Restore account info (excluding private keys)
     newAccounts.value = safeData.map(acc => ({
       ...acc,
-      privateKey: '已清除',
+      privateKey: 'Cleared',
       balance: '0',
       funding: false
     }))
@@ -185,10 +185,10 @@ const loadFromSessionStorage = () => {
   }
 }
 
-// 组件挂载时加载数据
+// Load data when component mounts
 onMounted(() => {
   loadFromSessionStorage()
-  // 如果有已保存的账户，刷新余额
+  // If there are saved accounts, refresh balances
   if (newAccounts.value.length > 0) {
     refreshAccounts()
   }

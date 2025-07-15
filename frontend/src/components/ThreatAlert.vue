@@ -10,7 +10,7 @@
       </div>
       <div class="alert-actions">
         <button v-if="showCreateProposal" @click="createProposal" class="btn btn-primary btn-sm">
-          创建提案
+          Create Proposal
         </button>
       </div>
     </div>
@@ -18,21 +18,21 @@
     <div class="alert-body">
       <div class="threat-details">
         <div class="detail-item">
-          <span class="label">威胁类型：</span>
+          <span class="label">Threat Type:</span>
           <span class="value threat-type">{{ threat.threat_type }}</span>
         </div>
         <div class="detail-item">
-          <span class="label">源IP：</span>
+          <span class="label">Source IP:</span>
           <code class="value ip-address">{{ threat.source_ip }}</code>
         </div>
         <div class="detail-item">
-          <span class="label">置信度：</span>
+          <span class="label">Confidence:</span>
           <span class="value confidence" :class="confidenceClass">
             {{ (threat.confidence * 100).toFixed(1) }}%
           </span>
         </div>
         <div class="detail-item">
-          <span class="label">响应级别：</span>
+          <span class="label">Response Level:</span>
           <span class="value response-level badge" :class="responseClass">
             {{ responseText }}
           </span>
@@ -96,24 +96,24 @@ const alertIcon = computed(() => {
 
 const alertTitle = computed(() => {
   const confidence = props.threat.confidence
-  if (confidence >= 0.9) return '紧急威胁警报'
-  if (confidence >= 0.8) return '高危威胁检测'
-  if (confidence >= 0.5) return '中等威胁检测'
-  return '低级威胁检测'
+  if (confidence >= 0.9) return 'Critical Threat Alert'
+  if (confidence >= 0.8) return 'High Risk Threat Detected'
+  if (confidence >= 0.5) return 'Medium Threat Detected'
+  return 'Low Level Threat Detected'
 })
 
 const alertDescription = computed(() => {
   const type = props.threat.threat_type
   const descriptions = {
-    'DDoS': '检测到分布式拒绝服务攻击，可能导致服务不可用',
-    'Brute Force': '检测到暴力破解尝试，可能危及账户安全',
-    'SQL Injection': '检测到SQL注入攻击，可能导致数据泄露',
-    'XSS': '检测到跨站脚本攻击，可能窃取用户信息',
-    'Port Scan': '检测到端口扫描活动，可能是攻击前的侦察',
-    'Malware': '检测到恶意软件活动，可能感染系统',
-    'Phishing': '检测到钓鱼攻击，可能窃取用户凭证'
+    'DDoS': 'Distributed Denial of Service attack detected, may cause service unavailability',
+    'Brute Force': 'Brute force attack attempts detected, may compromise account security',
+    'SQL Injection': 'SQL injection attack detected, may lead to data breach',
+    'XSS': 'Cross-site scripting attack detected, may steal user information',
+    'Port Scan': 'Port scanning activity detected, may be reconnaissance before attack',
+    'Malware': 'Malware activity detected, may infect system',
+    'Phishing': 'Phishing attack detected, may steal user credentials'
   }
-  return descriptions[type] || `检测到${type}威胁，请及时处理`
+  return descriptions[type] || `${type} threat detected, please handle promptly`
 })
 
 const confidenceClass = computed(() => {
@@ -137,12 +137,12 @@ const responseClass = computed(() => {
 const responseText = computed(() => {
   const level = props.threat.response_level
   const mapping = {
-    'auto': '自动响应',
-    'auto_proposal': '自动提案',
-    'manual': '手动决策',
-    'silent': '静默记录'
+    'auto': 'Auto Response',
+    'auto_proposal': 'Auto Proposal',
+    'manual': 'Manual Decision',
+    'silent': 'Silent Log'
   }
-  return mapping[level] || '未知'
+  return mapping[level] || 'Unknown'
 })
 
 const showCreateProposal = computed(() => {
@@ -162,11 +162,11 @@ const createProposal = async () => {
     
     if (result.success) {
       emit('proposalCreated', result.data)
-      alert('提案创建成功！')
+      alert('Proposal created successfully!')
     }
   } catch (error) {
-    console.error('创建提案失败:', error)
-    alert('创建提案失败，请稍后重试')
+    console.error('Proposal creation failed:', error)
+    alert('Proposal creation failed, please try again later')
   }
 }
 

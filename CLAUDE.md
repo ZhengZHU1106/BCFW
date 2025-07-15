@@ -142,6 +142,13 @@ POST /api/accounts/fund        # Fund account from Treasury
 - ✅ Multi-signature proposal system with ETH rewards
 - ✅ Complete threat detection → decision → execution → audit workflow
 - ✅ Vue 3 + Vite frontend with real Web3 account creation and management
+- ✅ **Phase 3.5: UI Internationalization** - All frontend text converted to English
+
+**Known Issues & Planned Improvements:**
+- 🔄 **Role System Needs Redesign**: Current Manager/Operator roles have identical functionality
+- 🔄 **Account Structure Optimization**: Move from dynamic account creation to fixed 10-account structure
+- 🔄 **API Issues**: Proposal signing parameter mismatch, missing withdrawal functionality
+- 🔄 **Permission Enforcement**: No backend validation of role-based access control
 
 ## Technical Implementation Details
 
@@ -164,13 +171,34 @@ POST /api/accounts/fund        # Fund account from Treasury
 - `0.70-0.80`: Alert only, manual proposal creation by Operator
 - `<0.70`: Silent background logging
 
+## Next Phase: Role System & Account Architecture Redesign
+
+**Planned Account Structure (Phase 4):**
+```
+Standard 10-Account Architecture (like Ganache Desktop):
+├── Manager_0, Manager_1, Manager_2 (indices 0-2) - Decision makers, can only SIGN proposals
+├── Treasury (index 3) - System treasury for reward payments  
+└── Operator_0 to Operator_5 (indices 4-9) - Front-line users, can only CREATE proposals
+```
+
+**Role Separation Design:**
+- **Managers (accounts 0-2)**: Can view and sign proposals, monitor system status, CANNOT create proposals
+- **Operators (accounts 4-9)**: Can create proposals, simulate attacks, monitor alerts, CANNOT sign proposals
+- **System**: Auto-creates proposals for high-confidence threats (>0.80)
+
+**Implementation Plan:**
+1. **Phase 4.1**: Update account initialization to fixed 10-account structure
+2. **Phase 4.2**: Implement role-based permission validation in backend APIs
+3. **Phase 4.3**: Redesign frontend with role-specific interfaces and capabilities
+4. **Phase 4.4**: Fix API issues (proposal signing, withdrawal functionality)
+
 ## Development Guidelines
 
 - **No Model Training**: Use existing trained model files; all simulation uses pre-generated data
 - **Security Focus**: This is a defensive security platform - all features should enhance security monitoring and response
 - **Simulation-Based**: No real firewall/network device interaction; all responses are simulated and logged
 - **Demonstration-Oriented**: UI clearly visualizes the threat detection → decision → response → audit flow
-- **Role-Based Access**: Frontend supports switching between Operator and Manager views
+- **Role-Based Access**: Clear separation between Manager and Operator capabilities
 - **English Interface**: All user-facing text, error messages, and documentation are in English
-- **Real Web3 Integration**: Frontend creates real blockchain accounts and interacts with Ganache
+- **Real Web3 Integration**: Frontend uses standard 10-account structure and interacts with Ganache
 - **Security Best Practices**: Private keys are not persisted beyond session storage for security

@@ -2,7 +2,7 @@
   <div class="proposal-card card" :class="cardClass">
     <div class="card-header">
       <div class="proposal-id">
-        <span class="id-label">提案 #{{ proposal.id }}</span>
+        <span class="id-label">Proposal #{{ proposal.id }}</span>
         <span class="status-badge badge" :class="statusClass">
           {{ statusText }}
         </span>
@@ -15,20 +15,20 @@
     <div class="card-body">
       <!-- 威胁信息 -->
       <div class="threat-info">
-        <h4 class="threat-title">{{ proposal.threat_type }} 威胁</h4>
+        <h4 class="threat-title">{{ proposal.threat_type }} Threat</h4>
         <div class="threat-details">
           <div class="detail-row">
-            <span class="label">目标IP：</span>
+            <span class="label">Target IP:</span>
             <code class="value">{{ proposal.target_ip || '192.168.1.100' }}</code>
           </div>
           <div class="detail-row">
-            <span class="label">置信度：</span>
+            <span class="label">Confidence:</span>
             <span class="value confidence" :class="confidenceClass">
               {{ (proposal.confidence * 100).toFixed(1) }}%
             </span>
           </div>
           <div class="detail-row">
-            <span class="label">建议操作：</span>
+            <span class="label">Suggested Action:</span>
             <span class="value action">{{ actionText }}</span>
           </div>
         </div>
@@ -37,7 +37,7 @@
       <!-- 多签进度 -->
       <div class="signature-progress">
         <div class="progress-header">
-          <span class="progress-title">签名进度</span>
+          <span class="progress-title">Signature Progress</span>
           <span class="progress-count">{{ signedCount }}/{{ requiredSignatures }}</span>
         </div>
         <div class="progress-bar">
@@ -51,7 +51,7 @@
       <!-- 签名者列表 -->
       <div class="signers-list">
         <div class="signers-header">
-          <h5>管理员签名状态</h5>
+          <h5>Manager Signature Status</h5>
         </div>
         <div class="signers-grid">
           <div 
@@ -75,7 +75,7 @@
                 class="btn btn-primary btn-sm"
                 :disabled="signing"
               >
-                {{ signing ? '签名中...' : '签名' }}
+                {{ signing ? 'Signing...' : 'Sign' }}
               </button>
             </div>
           </div>
@@ -90,7 +90,7 @@
           class="btn btn-secondary"
           :disabled="withdrawing"
         >
-          {{ withdrawing ? '撤回中...' : '撤回提案' }}
+          {{ withdrawing ? 'Withdrawing...' : 'Withdraw Proposal' }}
         </button>
       </div>
     </div>
@@ -99,10 +99,10 @@
     <div v-if="proposal.status === 'approved'" class="execution-result">
       <div class="result-header">
         <span class="result-icon">✅</span>
-        <span class="result-text">提案已批准并执行</span>
+        <span class="result-text">Proposal Approved and Executed</span>
       </div>
       <div class="result-details">
-        <p>奖励已发送给最终签名者：{{ finalSignerReward }}</p>
+        <p>Reward sent to final signer: {{ finalSignerReward }}</p>
       </div>
     </div>
   </div>
@@ -144,11 +144,11 @@ const statusClass = computed(() => {
 
 const statusText = computed(() => {
   const mapping = {
-    'pending': '待处理',
-    'approved': '已批准',
-    'rejected': '已拒绝'
+    'pending': 'Pending',
+    'approved': 'Approved',
+    'rejected': 'Rejected'
   }
-  return mapping[props.proposal.status] || '未知'
+  return mapping[props.proposal.status] || 'Unknown'
 })
 
 const confidenceClass = computed(() => {
@@ -160,11 +160,11 @@ const confidenceClass = computed(() => {
 
 const actionText = computed(() => {
   const mapping = {
-    'block': '封锁IP',
-    'monitor': '监控',
-    'alert': '告警'
+    'block': 'Block IP',
+    'monitor': 'Monitor',
+    'alert': 'Alert'
   }
-  return mapping[props.proposal.action] || '处理'
+  return mapping[props.proposal.action] || 'Process'
 })
 
 const requiredSignatures = computed(() => 2)
@@ -202,7 +202,7 @@ const finalSignerReward = computed(() => {
   if (props.proposal.final_signer) {
     return `${props.proposal.final_signer} (0.01 ETH)`
   }
-  return '未知'
+  return 'Unknown'
 })
 
 const showActions = computed(() => {
@@ -230,14 +230,14 @@ const signProposal = async (managerIndex) => {
 const withdrawProposal = async () => {
   if (withdrawing.value) return
   
-  if (!confirm('确定要撤回此提案吗？')) {
+  if (!confirm('Are you sure you want to withdraw this proposal?')) {
     return
   }
   
   withdrawing.value = true
   try {
     // 这里可以添加撤回提案的API调用
-    alert('撤回功能暂未实现')
+    alert('Withdraw function not yet implemented')
   } finally {
     withdrawing.value = false
   }

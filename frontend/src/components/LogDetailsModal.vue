@@ -10,39 +10,39 @@
         <!-- 威胁检测记录详情 -->
         <div v-if="logType === 'detections'">
           <div class="detail-section">
-            <h4>基本信息</h4>
+            <h4>Basic Information</h4>
             <div class="detail-grid">
               <div class="detail-item">
-                <span class="label">检测时间：</span>
+                <span class="label">Detection Time:</span>
                 <span class="value">{{ formatTime(log.detected_at) }}</span>
               </div>
               <div class="detail-item">
-                <span class="label">威胁类型：</span>
+                <span class="label">Threat Type:</span>
                 <span class="value threat-type">{{ log.threat_type }}</span>
               </div>
               <div class="detail-item">
-                <span class="label">源IP地址：</span>
+                <span class="label">Source IP:</span>
                 <code class="value">{{ log.source_ip }}</code>
               </div>
               <div class="detail-item">
-                <span class="label">置信度：</span>
+                <span class="label">Confidence:</span>
                 <span class="value confidence" :class="getConfidenceClass(log.confidence)">
                   {{ (log.confidence * 100).toFixed(1) }}%
                 </span>
               </div>
               <div class="detail-item">
-                <span class="label">响应级别：</span>
+                <span class="label">Response Level:</span>
                 <span class="value">{{ getResponseText(log.response_level) }}</span>
               </div>
               <div class="detail-item">
-                <span class="label">处理状态：</span>
+                <span class="label">Processing Status:</span>
                 <span class="value">{{ getStatusText(log.status) }}</span>
               </div>
             </div>
           </div>
           
           <div class="detail-section" v-if="log.features">
-            <h4>特征分析</h4>
+            <h4>Feature Analysis</h4>
             <div class="features-grid">
               <div v-for="(value, key) in log.features" :key="key" class="feature-item">
                 <span class="feature-name">{{ key }}:</span>
@@ -52,7 +52,7 @@
           </div>
           
           <div class="detail-section" v-if="log.raw_data">
-            <h4>原始数据</h4>
+            <h4>Raw Data</h4>
             <pre class="raw-data">{{ JSON.stringify(log.raw_data, null, 2) }}</pre>
           </div>
         </div>
@@ -60,61 +60,61 @@
         <!-- 响应执行记录详情 -->
         <div v-else>
           <div class="detail-section">
-            <h4>执行信息</h4>
+            <h4>Execution Information</h4>
             <div class="detail-grid">
               <div class="detail-item">
-                <span class="label">执行时间：</span>
+                <span class="label">Execution Time:</span>
                 <span class="value">{{ formatTime(log.executed_at) }}</span>
               </div>
               <div class="detail-item">
-                <span class="label">操作类型：</span>
+                <span class="label">Operation Type:</span>
                 <span class="value action-type">{{ log.action }}</span>
               </div>
               <div class="detail-item">
-                <span class="label">目标IP：</span>
+                <span class="label">Target IP:</span>
                 <code class="value">{{ log.target_ip }}</code>
               </div>
               <div class="detail-item">
-                <span class="label">执行方式：</span>
+                <span class="label">Execution Method:</span>
                 <span class="value">{{ getExecutionText(log.execution_type) }}</span>
               </div>
               <div class="detail-item">
-                <span class="label">执行者：</span>
-                <span class="value">{{ log.executor || '系统' }}</span>
+                <span class="label">Executor:</span>
+                <span class="value">{{ log.executor || 'System' }}</span>
               </div>
               <div class="detail-item">
-                <span class="label">执行状态：</span>
+                <span class="label">Execution Status:</span>
                 <span class="value">{{ getExecutionStatusText(log.status) }}</span>
               </div>
             </div>
           </div>
           
           <div class="detail-section" v-if="log.proposal_id">
-            <h4>关联提案</h4>
+            <h4>Related Proposal</h4>
             <div class="detail-grid">
               <div class="detail-item">
-                <span class="label">提案ID：</span>
+                <span class="label">Proposal ID:</span>
                 <span class="value">#{{ log.proposal_id }}</span>
               </div>
               <div class="detail-item">
-                <span class="label">签名者：</span>
-                <span class="value">{{ log.signers ? log.signers.join(', ') : '未知' }}</span>
+                <span class="label">Signers:</span>
+                <span class="value">{{ log.signers ? log.signers.join(', ') : 'Unknown' }}</span>
               </div>
               <div class="detail-item">
-                <span class="label">最终签名者：</span>
-                <span class="value">{{ log.final_signer || '未知' }}</span>
+                <span class="label">Final Signer:</span>
+                <span class="value">{{ log.final_signer || 'Unknown' }}</span>
               </div>
             </div>
           </div>
           
           <div class="detail-section" v-if="log.result">
-            <h4>执行结果</h4>
+            <h4>Execution Result</h4>
             <div class="execution-result">
               <div class="result-status" :class="log.status">
                 {{ getExecutionStatusText(log.status) }}
               </div>
               <div class="result-details">
-                <p>{{ log.result.message || '操作完成' }}</p>
+                <p>{{ log.result.message || 'Operation completed' }}</p>
                 <div v-if="log.result.details" class="result-data">
                   <pre>{{ JSON.stringify(log.result.details, null, 2) }}</pre>
                 </div>
@@ -126,10 +126,10 @@
       
       <div class="modal-footer">
         <button @click="$emit('close')" class="btn btn-secondary">
-          关闭
+          Close
         </button>
         <button @click="copyToClipboard" class="btn btn-primary">
-          复制详情
+          Copy Details
         </button>
       </div>
     </div>
@@ -154,7 +154,7 @@ const emit = defineEmits(['close'])
 
 // 计算属性
 const modalTitle = computed(() => {
-  return props.logType === 'detections' ? '威胁检测详情' : '响应执行详情'
+  return props.logType === 'detections' ? 'Threat Detection Details' : 'Response Execution Details'
 })
 
 // 复制详情到剪贴板
@@ -162,10 +162,10 @@ const copyToClipboard = async () => {
   try {
     const content = JSON.stringify(props.log, null, 2)
     await navigator.clipboard.writeText(content)
-    alert('详情已复制到剪贴板')
+    alert('Details copied to clipboard')
   } catch (error) {
-    console.error('复制失败:', error)
-    alert('复制失败')
+    console.error('Copy failed:', error)
+    alert('Copy failed')
   }
 }
 
@@ -178,39 +178,39 @@ const getConfidenceClass = (confidence) => {
 
 const getResponseText = (level) => {
   const mapping = {
-    'auto': '自动响应',
-    'auto_proposal': '自动提案',
-    'manual': '手动决策',
-    'silent': '静默记录'
+    'auto': 'Auto Response',
+    'auto_proposal': 'Auto Proposal',
+    'manual': 'Manual Decision',
+    'silent': 'Silent Log'
   }
-  return mapping[level] || '未知'
+  return mapping[level] || 'Unknown'
 }
 
 const getStatusText = (status) => {
   const mapping = {
-    'detected': '已检测',
-    'executed': '已执行',
-    'proposal_created': '已创建提案',
-    'approved': '已批准'
+    'detected': 'Detected',
+    'executed': 'Executed',
+    'proposal_created': 'Proposal Created',
+    'approved': 'Approved'
   }
-  return mapping[status] || '未知'
+  return mapping[status] || 'Unknown'
 }
 
 const getExecutionText = (type) => {
   const mapping = {
-    'auto': '自动执行',
-    'manual': '人工批准'
+    'auto': 'Auto Execution',
+    'manual': 'Manual Approval'
   }
   return mapping[type] || '未知'
 }
 
 const getExecutionStatusText = (status) => {
   const mapping = {
-    'success': '成功',
-    'failed': '失败',
-    'pending': '处理中'
+    'success': 'Success',
+    'failed': 'Failed',
+    'pending': 'Processing'
   }
-  return mapping[status] || '未知'
+  return mapping[status] || 'Unknown'
 }
 
 // 格式化时间

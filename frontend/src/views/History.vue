@@ -311,7 +311,7 @@ const getResponseText = (level) => {
     'manual': 'Manual Decision',
     'silent': 'Silent Log'
   }
-  return mapping[level] || '未知'
+  return mapping[level] || 'Unknown'
 }
 
 const getStatusClass = (status) => {
