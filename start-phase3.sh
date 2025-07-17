@@ -112,9 +112,12 @@ sleep 5
 # 启动后端
 echo ""
 echo "🔧 启动后端API服务..."
+# 设置PYTHONPATH确保导入正确
+export PYTHONPATH="$(pwd):$PYTHONPATH"
 "$PYTHON_CMD" -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload > logs/backend.log 2>&1 &
 BACKEND_PID=$!
 echo "✅ 后端API启动成功 (PID: $BACKEND_PID) 使用 $PYTHON_CMD"
+echo "📍 PYTHONPATH已设置为: $(pwd)"
 
 # 等待后端启动
 echo "⏳ 等待后端准备就绪..."

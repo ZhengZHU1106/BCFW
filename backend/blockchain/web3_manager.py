@@ -6,6 +6,8 @@ from web3 import Web3
 from eth_account import Account
 from typing import Dict, List, Optional
 import logging
+import json
+import os
 from ..config import GANACHE_CONFIG, INCENTIVE_CONFIG
 
 logger = logging.getLogger(__name__)
@@ -17,8 +19,10 @@ class Web3Manager:
         self.w3: Optional[Web3] = None
         self.accounts: Dict[str, str] = {}  # role -> address
         self.private_keys: Dict[str, str] = {}  # role -> private_key
+        self.multisig_contract = None
         self._initialize_connection()
         self._setup_accounts()
+        self._initialize_multisig_contract()
     
     def _initialize_connection(self):
         """初始化Web3连接"""
@@ -160,6 +164,133 @@ class Web3Manager:
     def is_connected(self) -> bool:
         """检查连接状态"""
         return self.w3 is not None and self.w3.is_connected()
+    
+    def _initialize_multisig_contract(self):
+        """初始化多签名合约集成"""
+        try:
+            # 导入多签名合约集成模块
+            from .multisig_contract import MultiSigContract
+            self.multisig_contract = MultiSigContract(self)
+            
+            # 加载合约配置
+            config_path = os.path.join(os.path.dirname(__file__), '../assets/multisig_contract.json')
+            if os.path.exists(config_path):
+                with open(config_path, 'r') as f:
+                    self.multisig_config = json.load(f)
+                logger.info(f"✅ MultiSig合约集成成功: {self.multisig_config['address']}")
+            else:
+                logger.warning(f"⚠️ MultiSig合约配置文件不存在: {config_path}")
+                self.multisig_config = None
+                
+        except Exception as e:
+            logger.error(f"❌ MultiSig合约初始化失败: {e}")
+            self.multisig_contract = None
+            self.multisig_config = None
+    
+    # ================================
+    # MultiSig Contract Methods
+    # ================================
+    
+    def create_multisig_proposal(self, target_role: str, amount_eth: float, data: str = "0x") -> Dict:
+        """创建多签名提案"""
+        if not self.multisig_contract:
+            return {
+                "success": False,
+                "error": "MultiSig contract not initialized"
+            }
+        
+        try:
+            target_address = self.accounts.get(target_role)
+            if not target_address:
+                raise ValueError(f"Unknown target role: {target_role}")
+            
+            return self.multisig_contract.create_proposal(target_address, amount_eth, data)
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to create multisig proposal: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    
+    def sign_multisig_proposal(self, proposal_id: int, signer_role: str) -> Dict:
+        """签名多签名提案"""
+        if not self.multisig_contract:
+            return {
+                "success": False,
+                "error": "MultiSig contract not initialized"
+            }
+        
+        try:
+            return self.multisig_contract.sign_proposal(proposal_id, signer_role)
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to sign multisig proposal: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    
+    def get_multisig_proposal(self, proposal_id: int) -> Dict:
+        """获取多签名提案详情"""
+        if not self.multisig_contract:
+            return {
+                "success": False,
+                "error": "MultiSig contract not initialized"
+            }
+        
+        try:
+            proposal = self.multisig_contract.get_proposal(proposal_id)
+            if proposal:
+                return {
+                    "success": True,
+                    "proposal": proposal
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": f"Proposal {proposal_id} not found"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Failed to get multisig proposal: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    
+    def get_multisig_info(self) -> Dict:
+        """获取多签名合约信息"""
+        if not self.multisig_contract:
+            return {
+                "success": False,
+                "error": "MultiSig contract not initialized"
+            }
+        
+        try:
+            contract_info = self.multisig_contract.get_contract_info()
+            return {
+                "success": True,
+                "contract_info": contract_info
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to get multisig info: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    
+    def has_signed_multisig_proposal(self, proposal_id: int, signer_role: str) -> bool:
+        """检查是否已签名多签名提案"""
+        if not self.multisig_contract:
+            return False
+        
+        try:
+            return self.multisig_contract.has_signed(proposal_id, signer_role)
+        except Exception as e:
+            logger.error(f"❌ Failed to check multisig signature: {e}")
+            return False
 
 # 全局Web3管理器实例
 web3_manager = None

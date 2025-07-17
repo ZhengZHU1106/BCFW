@@ -142,7 +142,7 @@ class ThreatDetectionService:
     
     def _create_auto_proposal(self, db: Session, detection_result: Dict, 
                             target_ip: str) -> Proposal:
-        """创建自动提案"""
+        """创建自动提案 (使用MultiSig合约)"""
         proposal = Proposal(
             threat_type=detection_result['predicted_class'],
             confidence=detection_result['confidence'],
@@ -156,7 +156,24 @@ class ThreatDetectionService:
         db.add(proposal)
         db.flush()  # 获取ID
         
-        logger.info(f"📝 自动创建提案: ID-{proposal.id}, 威胁-{detection_result['predicted_class']}")
+        # 使用MultiSig合约创建提案
+        multisig_result = self.web3_manager.create_multisig_proposal(
+            target_role="manager_0",  # 奖励目标（这里可以动态确定）
+            amount_eth=INCENTIVE_CONFIG['proposal_reward'],
+            data="0x"
+        )
+        
+        if multisig_result["success"]:
+            # 更新提案的合约相关信息
+            proposal.contract_proposal_id = multisig_result["proposal_id"]
+            proposal.contract_address = multisig_result["contract_address"]
+            
+            logger.info(f"📝 自动创建MultiSig提案: DB-ID-{proposal.id}, Contract-ID-{multisig_result['proposal_id']}")
+        else:
+            logger.error(f"❌ MultiSig提案创建失败: {multisig_result['error']}")
+            # 继续使用传统模式
+            proposal.contract_proposal_id = None
+        
         return proposal
     
     def _generate_random_ip(self) -> str:
@@ -214,7 +231,7 @@ class ProposalService:
             raise
     
     def sign_proposal(self, db: Session, proposal_id: int, manager_role: str) -> Dict:
-        """Manager签名提案"""
+        """Manager签名提案 (使用MultiSig合约)"""
         try:
             # 查找提案
             proposal = db.query(Proposal).filter(Proposal.id == proposal_id).first()
@@ -229,7 +246,21 @@ class ProposalService:
             if manager_role in signed_by:
                 raise ValueError(f"Manager {manager_role} 已经签名过此提案")
             
-            # 添加签名
+            # 使用MultiSig合约签名（如果有合约提案ID）
+            multisig_result = None
+            if proposal.contract_proposal_id:
+                multisig_result = self.web3_manager.sign_multisig_proposal(
+                    proposal.contract_proposal_id, 
+                    manager_role
+                )
+                
+                if multisig_result["success"]:
+                    logger.info(f"✅ MultiSig合约签名成功: Contract-ID-{proposal.contract_proposal_id} by {manager_role}")
+                else:
+                    logger.error(f"❌ MultiSig合约签名失败: {multisig_result['error']}")
+                    # 继续传统签名流程
+            
+            # 更新传统签名信息（向后兼容）
             signed_by.append(manager_role)
             proposal.signed_by = signed_by
             proposal.signatures_count = len(signed_by)
@@ -240,15 +271,21 @@ class ProposalService:
                 result = self._execute_approved_proposal(db, proposal, manager_role)
                 proposal.status = "approved"
                 proposal.approved_at = datetime.now()
+                
+                # 如果使用了MultiSig合约且执行成功
+                if multisig_result and multisig_result.get("executed"):
+                    result["multisig_executed"] = True
+                    result["multisig_result"] = multisig_result.get("execution_result")
             else:
                 result = {
                     "status": "signed",
-                    "message": f"签名成功，还需要 {proposal.signatures_required - proposal.signatures_count} 个签名"
+                    "message": f"签名成功，还需要 {proposal.signatures_required - proposal.signatures_count} 个签名",
+                    "multisig_signed": multisig_result is not None and multisig_result["success"]
                 }
             
             db.commit()
             
-            logger.info(f"✅ 提案签名成功: ID-{proposal_id} by {manager_role}")
+            logger.info(f"✅ 提案签名成功: DB-ID-{proposal_id} by {manager_role}")
             return result
             
         except Exception as e:

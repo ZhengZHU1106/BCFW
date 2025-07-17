@@ -1,0 +1,251 @@
+// SPDX-License-Identifier: GPL-3.0
+pragma solidity >=0.8.0 <0.9.0;
+
+/**
+ * @title MultiSigProposal
+ * @dev Simple multi-signature contract for security proposal approval and reward distribution
+ * Designed specifically for the blockchain security platform
+ */
+contract MultiSigProposal {
+    // Events
+    event ProposalCreated(uint256 indexed proposalId, address indexed creator, address target, uint256 amount);
+    event ProposalSigned(uint256 indexed proposalId, address indexed signer);
+    event ProposalExecuted(uint256 indexed proposalId, address indexed executor, address target, uint256 amount);
+    event OwnerAdded(address indexed owner);
+    event OwnerRemoved(address indexed owner);
+    event ThresholdChanged(uint256 threshold);
+
+    // State variables
+    mapping(address => bool) public isOwner;
+    address[] public owners;
+    uint256 public threshold;
+    uint256 public proposalCount;
+    
+    struct Proposal {
+        uint256 id;
+        address target;
+        uint256 amount;
+        bytes data;
+        bool executed;
+        uint256 signatureCount;
+        mapping(address => bool) signatures;
+        address creator;
+        uint256 createdAt;
+    }
+    
+    mapping(uint256 => Proposal) public proposals;
+    
+    // Modifiers
+    modifier onlyOwner() {
+        require(isOwner[msg.sender], "Not an owner");
+        _;
+    }
+    
+    modifier proposalExists(uint256 proposalId) {
+        require(proposalId < proposalCount, "Proposal does not exist");
+        _;
+    }
+    
+    modifier notExecuted(uint256 proposalId) {
+        require(!proposals[proposalId].executed, "Proposal already executed");
+        _;
+    }
+    
+    /**
+     * @dev Constructor sets up the initial owners and threshold
+     * @param _owners List of initial owners
+     * @param _threshold Number of signatures required for execution
+     */
+    constructor(address[] memory _owners, uint256 _threshold) {
+        require(_owners.length >= _threshold && _threshold > 0, "Invalid threshold");
+        
+        for (uint256 i = 0; i < _owners.length; i++) {
+            address owner = _owners[i];
+            require(owner != address(0), "Invalid owner");
+            require(!isOwner[owner], "Duplicate owner");
+            
+            isOwner[owner] = true;
+            owners.push(owner);
+            emit OwnerAdded(owner);
+        }
+        
+        threshold = _threshold;
+        emit ThresholdChanged(_threshold);
+    }
+    
+    /**
+     * @dev Create a new proposal for multi-signature approval
+     * @param target Address to send ETH to (reward recipient)
+     * @param amount Amount of ETH to send (in wei)
+     * @param data Additional data (for future extensibility)
+     * @return proposalId The ID of the created proposal
+     */
+    function createProposal(
+        address target,
+        uint256 amount,
+        bytes memory data
+    ) external onlyOwner returns (uint256 proposalId) {
+        require(target != address(0), "Invalid target");
+        require(address(this).balance >= amount, "Insufficient contract balance");
+        
+        proposalId = proposalCount++;
+        Proposal storage proposal = proposals[proposalId];
+        
+        proposal.id = proposalId;
+        proposal.target = target;
+        proposal.amount = amount;
+        proposal.data = data;
+        proposal.executed = false;
+        proposal.signatureCount = 0;
+        proposal.creator = msg.sender;
+        proposal.createdAt = block.timestamp;
+        
+        emit ProposalCreated(proposalId, msg.sender, target, amount);
+        
+        return proposalId;
+    }
+    
+    /**
+     * @dev Sign a proposal
+     * @param proposalId ID of the proposal to sign
+     */
+    function signProposal(uint256 proposalId) 
+        external 
+        onlyOwner 
+        proposalExists(proposalId) 
+        notExecuted(proposalId) 
+    {
+        Proposal storage proposal = proposals[proposalId];
+        require(!proposal.signatures[msg.sender], "Already signed");
+        
+        proposal.signatures[msg.sender] = true;
+        proposal.signatureCount++;
+        
+        emit ProposalSigned(proposalId, msg.sender);
+        
+        // Auto-execute if threshold is met
+        if (proposal.signatureCount >= threshold) {
+            _executeProposal(proposalId);
+        }
+    }
+    
+    /**
+     * @dev Execute a proposal (internal function)
+     * @param proposalId ID of the proposal to execute
+     */
+    function _executeProposal(uint256 proposalId) internal {
+        Proposal storage proposal = proposals[proposalId];
+        require(proposal.signatureCount >= threshold, "Insufficient signatures");
+        require(!proposal.executed, "Already executed");
+        require(address(this).balance >= proposal.amount, "Insufficient balance");
+        
+        proposal.executed = true;
+        
+        // Send ETH to target
+        (bool success, ) = proposal.target.call{value: proposal.amount}(proposal.data);
+        require(success, "Transaction failed");
+        
+        emit ProposalExecuted(proposalId, msg.sender, proposal.target, proposal.amount);
+    }
+    
+    /**
+     * @dev Get proposal details
+     * @param proposalId ID of the proposal
+     * @return id Proposal ID
+     * @return target Target address
+     * @return amount Amount in wei
+     * @return executed Whether executed
+     * @return signatureCount Number of signatures
+     * @return creator Proposal creator
+     * @return createdAt Timestamp of creation
+     */
+    function getProposal(uint256 proposalId) 
+        external 
+        view 
+        proposalExists(proposalId)
+        returns (
+            uint256 id,
+            address target,
+            uint256 amount,
+            bool executed,
+            uint256 signatureCount,
+            address creator,
+            uint256 createdAt
+        ) 
+    {
+        Proposal storage proposal = proposals[proposalId];
+        return (
+            proposal.id,
+            proposal.target,
+            proposal.amount,
+            proposal.executed,
+            proposal.signatureCount,
+            proposal.creator,
+            proposal.createdAt
+        );
+    }
+    
+    /**
+     * @dev Check if an address has signed a proposal
+     * @param proposalId ID of the proposal
+     * @param owner Address to check
+     * @return Whether the address has signed
+     */
+    function hasSigned(uint256 proposalId, address owner) 
+        external 
+        view 
+        proposalExists(proposalId)
+        returns (bool) 
+    {
+        return proposals[proposalId].signatures[owner];
+    }
+    
+    /**
+     * @dev Get all owners
+     * @return Array of owner addresses
+     */
+    function getOwners() external view returns (address[] memory) {
+        return owners;
+    }
+    
+    /**
+     * @dev Get contract balance
+     * @return Balance in wei
+     */
+    function getBalance() external view returns (uint256) {
+        return address(this).balance;
+    }
+    
+    /**
+     * @dev Receive ETH (for funding the contract)
+     */
+    receive() external payable {}
+    
+    /**
+     * @dev Fallback function
+     */
+    fallback() external payable {}
+    
+    /**
+     * @dev Add a new owner (requires multi-sig approval)
+     * @param newOwner Address of new owner
+     */
+    function addOwner(address newOwner) external onlyOwner {
+        require(newOwner != address(0), "Invalid owner");
+        require(!isOwner[newOwner], "Already an owner");
+        
+        isOwner[newOwner] = true;
+        owners.push(newOwner);
+        emit OwnerAdded(newOwner);
+    }
+    
+    /**
+     * @dev Change the signature threshold (requires multi-sig approval)
+     * @param newThreshold New threshold value
+     */
+    function changeThreshold(uint256 newThreshold) external onlyOwner {
+        require(newThreshold > 0 && newThreshold <= owners.length, "Invalid threshold");
+        threshold = newThreshold;
+        emit ThresholdChanged(newThreshold);
+    }
+}

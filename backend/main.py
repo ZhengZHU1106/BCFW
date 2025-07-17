@@ -7,10 +7,10 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
-from .database.connection import init_database, get_db
-from .blockchain.web3_manager import init_web3_manager
-from .ai_module.model_loader import init_threat_model
-from .app.services import ThreatDetectionService, ProposalService, SystemInfoService
+from backend.database.connection import init_database, get_db
+from backend.blockchain.web3_manager import init_web3_manager
+from backend.ai_module.model_loader import init_threat_model
+from backend.app.services import ThreatDetectionService, ProposalService, SystemInfoService
 
 # 配置日志
 logging.basicConfig(
@@ -182,7 +182,7 @@ async def create_manual_proposal(detection_id: int, action: str = "block", db: S
 async def get_detection_logs(limit: int = 50, db: Session = Depends(get_db)):
     """获取检测日志"""
     try:
-        from .database.models import ThreatDetectionLog
+        from backend.database.models import ThreatDetectionLog
         
         logs = db.query(ThreatDetectionLog).order_by(
             ThreatDetectionLog.detected_at.desc()
@@ -201,7 +201,7 @@ async def get_detection_logs(limit: int = 50, db: Session = Depends(get_db)):
 async def get_execution_logs(limit: int = 50, db: Session = Depends(get_db)):
     """获取执行日志"""
     try:
-        from .database.models import ExecutionLog
+        from backend.database.models import ExecutionLog
         
         logs = db.query(ExecutionLog).order_by(
             ExecutionLog.executed_at.desc()
@@ -220,7 +220,7 @@ async def get_execution_logs(limit: int = 50, db: Session = Depends(get_db)):
 async def fund_account(to_address: str, amount: float = 1.0):
     """从Treasury账户向新账户转账"""
     try:
-        from .blockchain.web3_manager import get_web3_manager
+        from backend.blockchain.web3_manager import get_web3_manager
         web3_manager = get_web3_manager()
         
         # 验证地址格式

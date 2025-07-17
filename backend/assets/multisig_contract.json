@@ -1,0 +1,14 @@
+{
+  "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+  "owners": [
+    "0x69F652A7392F550F60775d5EDb67f3320764cFa6",
+    "0xB524a6B6DA26d9f7eFF56CEF6093e79efe22ccc7",
+    "0x2DF346b30BaBf5f9b4F50D3CaA6a766C29e355bc"
+  ],
+  "threshold": 2,
+  "deployer": "0x60cE111818C7bAD01020e448D7c5C52c255b084a",
+  "deployedAt": "2025-07-17T07:07:52.350Z",
+  "network": "ganache-local",
+  "chainId": 1337,
+  "gasUsed": 2100000
+}

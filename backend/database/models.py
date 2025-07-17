@@ -37,6 +37,10 @@ class Proposal(Base):
     reward_recipient = Column(String(100), comment='奖励接收者')
     reward_tx_hash = Column(String(66), comment='奖励交易哈希')
     
+    # MultiSig合约集成字段
+    contract_proposal_id = Column(Integer, nullable=True, comment='合约中的提案ID')
+    contract_address = Column(String(42), nullable=True, comment='MultiSig合约地址')
+    
     # 时间戳
     created_at = Column(DateTime, default=func.now(), comment='创建时间')
     approved_at = Column(DateTime, comment='批准时间')
@@ -62,6 +66,8 @@ class Proposal(Base):
             'reward_paid': self.reward_paid,
             'reward_recipient': self.reward_recipient,
             'reward_tx_hash': self.reward_tx_hash,
+            'contract_proposal_id': self.contract_proposal_id,
+            'contract_address': self.contract_address,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'approved_at': self.approved_at.isoformat() if self.approved_at else None,
             'executed_at': self.executed_at.isoformat() if self.executed_at else None,

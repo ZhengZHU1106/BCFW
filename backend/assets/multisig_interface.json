@@ -1,0 +1,146 @@
+{
+  "name": "MultiSigProposal",
+  "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+  "abi": [
+    {
+      "type": "function",
+      "name": "createProposal",
+      "inputs": [
+        {
+          "name": "target",
+          "type": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "name": "data",
+          "type": "bytes"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "proposalId",
+          "type": "uint256"
+        }
+      ]
+    },
+    {
+      "type": "function",
+      "name": "signProposal",
+      "inputs": [
+        {
+          "name": "proposalId",
+          "type": "uint256"
+        }
+      ]
+    },
+    {
+      "type": "function",
+      "name": "getProposal",
+      "inputs": [
+        {
+          "name": "proposalId",
+          "type": "uint256"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "id",
+          "type": "uint256"
+        },
+        {
+          "name": "target",
+          "type": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "name": "executed",
+          "type": "bool"
+        },
+        {
+          "name": "signatureCount",
+          "type": "uint256"
+        },
+        {
+          "name": "creator",
+          "type": "address"
+        },
+        {
+          "name": "createdAt",
+          "type": "uint256"
+        }
+      ]
+    }
+  ],
+  "events": [
+    {
+      "type": "event",
+      "name": "ProposalCreated",
+      "inputs": [
+        {
+          "name": "proposalId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "creator",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "target",
+          "type": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256"
+        }
+      ]
+    },
+    {
+      "type": "event",
+      "name": "ProposalSigned",
+      "inputs": [
+        {
+          "name": "proposalId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "signer",
+          "type": "address",
+          "indexed": true
+        }
+      ]
+    },
+    {
+      "type": "event",
+      "name": "ProposalExecuted",
+      "inputs": [
+        {
+          "name": "proposalId",
+          "type": "uint256",
+          "indexed": true
+        },
+        {
+          "name": "executor",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "target",
+          "type": "address"
+        },
+        {
+          "name": "amount",
+          "type": "uint256"
+        }
+      ]
+    }
+  ]
+}
