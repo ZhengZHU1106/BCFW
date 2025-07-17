@@ -1,0 +1,14 @@
+{
+  "0x69F652A7392F550F60775d5EDb67f3320764cFa6": {
+    "total_signatures": 3,
+    "total_response_time": 14.222316,
+    "quality_score": 100,
+    "last_signature_time": "2025-07-17T22:13:15.496538"
+  },
+  "0xB524a6B6DA26d9f7eFF56CEF6093e79efe22ccc7": {
+    "total_signatures": 3,
+    "total_response_time": 34.077193,
+    "quality_score": 100,
+    "last_signature_time": "2025-07-17T22:13:18.521370"
+  }
+}

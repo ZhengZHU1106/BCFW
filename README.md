@@ -159,35 +159,35 @@ npm run start-chain-desktop  # Desktop setup instructions
 
 ## 🎖️ Development Status
 
-**Phase 1: Environment & Core Configuration** ✅ **Complete**
-- ✅ Project structure design and file organization
-- ✅ Base configuration file creation
-- ✅ AI model file deployment
-- ✅ Testing framework establishment
-- ✅ Verification scripts passing
+**Phase 1-6: Core System Development** ✅ **Complete**
+- ✅ Environment setup and AI model integration (CIC-IDS2017 dataset)
+- ✅ Backend FastAPI development with Web3 blockchain integration
+- ✅ Vue 3 frontend with English interface and role-based access
+- ✅ Custom MultiSig smart contract deployment and integration
+- ✅ End-to-end testing and demonstration preparation
 
-**Phase 2: Backend Development** ✅ **Complete**
-- ✅ Web3 connection to Ganache
-- ✅ AI model loading module (real Ensemble_Hybrid model)
-- ✅ Database design and API implementation
-- ✅ Multi-signature proposal system
-- ✅ Incentive mechanism and ETH transfers
-- ✅ Complete threat detection pipeline
+**Phase 7: Reward Pool Mechanism** 🚧 **In Progress**
+- 🔄 Solve incentive gaming problem with contribution-based rewards
+- 🔄 Implement smart contract reward pool management
+- 🔄 Add Manager contribution tracking and periodic distribution
+- 🔄 Frontend reward pool visualization and management
 
-**Phase 3: Frontend Development** ✅ **Complete**
-- ✅ Vue 3 + Vite frontend framework with English interface
-- ✅ Role switcher (Operator/Manager)
-- ✅ Account information dashboard with real account creation
-- ✅ Threat detection and alert visualization
-- ✅ Multi-signature proposal management interface
-- ✅ History records and audit log display
-- ✅ Complete end-to-end user interface
-- ✅ Real Web3 integration with private key management
+**Phase 8: Contract-Level Role Separation** 📋 **Planned**
+- 📋 Move role validation from backend to smart contract layer
+- 📋 Implement true decentralized permission control
+- 📋 Deploy role-aware smart contract with Manager/Operator separation
+- 📋 Simplify backend by removing centralized role validation
 
-**Phase 4: Integration Testing & Delivery** ✅ **Complete**
-- ✅ End-to-end manual testing
-- ✅ User experience optimization
-- ✅ Documentation and deployment preparation
+**Phase 9: MetaMask Web3 Integration** 📋 **Planned**
+- 📋 Replace backend-controlled transactions with user wallet control
+- 📋 Implement MetaMask connector and direct smart contract interaction
+- 📋 Enable genuine Web3 user experience with private key ownership
+- 📋 Provide seamless wallet integration with fallback compatibility
+
+**Current Priorities**:
+1. **Reward Pool (Phase 7)**: 2-3 days - Eliminate "final signer gets reward" gaming
+2. **Role Separation (Phase 8)**: 4-5 days - True decentralized permission control  
+3. **MetaMask Integration (Phase 9)**: 7-10 days - Genuine Web3 user experience
 
 ## 🔒 Security Features
 

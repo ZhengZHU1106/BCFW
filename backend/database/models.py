@@ -163,3 +163,165 @@ class ThreatDetectionLog(Base):
             'detected_at': self.detected_at.isoformat() if self.detected_at else None,
             'detection_data': self.detection_data
         }
+
+class RewardPool(Base):
+    """奖金池模型"""
+    __tablename__ = 'reward_pools'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    # 奖金池信息
+    balance = Column(Float, default=0.0, comment='奖金池余额(ETH)')
+    balance_wei = Column(String(100), default='0', comment='奖金池余额(Wei)')
+    base_reward = Column(Float, default=0.01, comment='基础奖励(ETH)')
+    
+    # 管理信息
+    treasury_address = Column(String(42), comment='国库地址')
+    contract_address = Column(String(42), comment='合约地址')
+    
+    # 统计信息
+    total_deposits = Column(Float, default=0.0, comment='总充值额度(ETH)')
+    total_rewards = Column(Float, default=0.0, comment='总奖励发放(ETH)')
+    active_managers = Column(Integer, default=0, comment='活跃Manager数量')
+    
+    # 时间戳
+    created_at = Column(DateTime, default=func.now(), comment='创建时间')
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), comment='更新时间')
+    
+    # 扩展数据
+    pool_config = Column(JSON, comment='奖金池配置')
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            'id': self.id,
+            'balance': self.balance,
+            'balance_wei': self.balance_wei,
+            'base_reward': self.base_reward,
+            'treasury_address': self.treasury_address,
+            'contract_address': self.contract_address,
+            'total_deposits': self.total_deposits,
+            'total_rewards': self.total_rewards,
+            'active_managers': self.active_managers,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'pool_config': self.pool_config
+        }
+
+class RewardPoolTransaction(Base):
+    """奖金池交易记录模型"""
+    __tablename__ = 'reward_pool_transactions'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    # 交易信息
+    transaction_type = Column(String(50), nullable=False, comment='交易类型：deposit/reward/distribute')
+    amount = Column(Float, nullable=False, comment='交易金额(ETH)')
+    amount_wei = Column(String(100), comment='交易金额(Wei)')
+    
+    # 账户信息
+    from_role = Column(String(50), comment='发送方角色')
+    from_address = Column(String(42), comment='发送方地址')
+    to_role = Column(String(50), comment='接收方角色')
+    to_address = Column(String(42), comment='接收方地址')
+    
+    # 区块链信息
+    tx_hash = Column(String(66), comment='交易哈希')
+    block_number = Column(Integer, comment='区块号')
+    gas_used = Column(Integer, comment='Gas消耗')
+    
+    # 关联信息
+    proposal_id = Column(Integer, comment='关联的提案ID')
+    pool_id = Column(Integer, comment='关联的奖金池ID')
+    
+    # 状态信息
+    status = Column(String(50), default='pending', comment='交易状态：pending/confirmed/failed')
+    error_message = Column(Text, comment='错误信息')
+    
+    # 时间戳
+    created_at = Column(DateTime, default=func.now(), comment='创建时间')
+    confirmed_at = Column(DateTime, comment='确认时间')
+    
+    # 扩展数据
+    transaction_data = Column(JSON, comment='完整交易数据')
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            'id': self.id,
+            'transaction_type': self.transaction_type,
+            'amount': self.amount,
+            'amount_wei': self.amount_wei,
+            'from_role': self.from_role,
+            'from_address': self.from_address,
+            'to_role': self.to_role,
+            'to_address': self.to_address,
+            'tx_hash': self.tx_hash,
+            'block_number': self.block_number,
+            'gas_used': self.gas_used,
+            'proposal_id': self.proposal_id,
+            'pool_id': self.pool_id,
+            'status': self.status,
+            'error_message': self.error_message,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'confirmed_at': self.confirmed_at.isoformat() if self.confirmed_at else None,
+            'transaction_data': self.transaction_data
+        }
+
+class ContributionRecord(Base):
+    """Manager贡献记录模型"""
+    __tablename__ = 'contribution_records'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    # Manager信息
+    manager_role = Column(String(50), nullable=False, comment='Manager角色')
+    manager_address = Column(String(42), nullable=False, comment='Manager地址')
+    
+    # 贡献统计
+    total_signatures = Column(Integer, default=0, comment='总签名次数')
+    total_response_time = Column(Float, default=0.0, comment='总响应时间(秒)')
+    avg_response_time = Column(Float, default=0.0, comment='平均响应时间(秒)')
+    quality_score = Column(Integer, default=0, comment='质量评分(0-100)')
+    
+    # 奖励信息
+    total_rewards_earned = Column(Float, default=0.0, comment='累计获得奖励(ETH)')
+    last_reward_amount = Column(Float, comment='最后一次奖励金额(ETH)')
+    reward_count = Column(Integer, default=0, comment='获得奖励次数')
+    
+    # 活动信息
+    last_signature_time = Column(DateTime, comment='最后签名时间')
+    last_reward_time = Column(DateTime, comment='最后获得奖励时间')
+    active_since = Column(DateTime, default=func.now(), comment='活跃开始时间')
+    
+    # 性能等级
+    performance_grade = Column(String(20), default='No Activity', comment='性能等级')
+    
+    # 时间戳
+    created_at = Column(DateTime, default=func.now(), comment='创建时间')
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), comment='更新时间')
+    
+    # 扩展数据
+    contribution_data = Column(JSON, comment='详细贡献数据')
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            'id': self.id,
+            'manager_role': self.manager_role,
+            'manager_address': self.manager_address,
+            'total_signatures': self.total_signatures,
+            'total_response_time': self.total_response_time,
+            'avg_response_time': self.avg_response_time,
+            'quality_score': self.quality_score,
+            'total_rewards_earned': self.total_rewards_earned,
+            'last_reward_amount': self.last_reward_amount,
+            'reward_count': self.reward_count,
+            'last_signature_time': self.last_signature_time.isoformat() if self.last_signature_time else None,
+            'last_reward_time': self.last_reward_time.isoformat() if self.last_reward_time else None,
+            'active_since': self.active_since.isoformat() if self.active_since else None,
+            'performance_grade': self.performance_grade,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'contribution_data': self.contribution_data
+        }

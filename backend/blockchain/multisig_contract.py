@@ -19,8 +19,18 @@ class MultiSigContract:
         self.proposals = {}  # In-memory proposal storage for demo
         self.proposal_counter = 1
         
+        # Reward pool state (simulated)
+        self.reward_pool_balance = 0.0  # ETH
+        self.contributions = {}  # manager_address -> contribution_data
+        
         # Load contract configuration
         self.config = self._load_config()
+        
+        # Initialize reward pool balance from persistent storage or Treasury tracking
+        self._initialize_reward_pool_balance()
+        
+        # Initialize contributions from persistent storage
+        self._initialize_contributions()
         
     def _load_config(self) -> Dict[str, Any]:
         """加载合约配置"""
@@ -112,6 +122,9 @@ class MultiSigContract:
             # 添加签名
             proposal["signatures"].add(signer_role)
             proposal["signature_count"] += 1
+            
+            # 更新贡献记录
+            self._update_contribution(signer_role, proposal["created_at"])
             
             logger.info(f"✅ Proposal {proposal_id} signed by {signer_role} ({proposal['signature_count']}/{self.config['threshold']})")
             
@@ -238,3 +251,284 @@ class MultiSigContract:
         """获取待处理提案"""
         return [self.get_proposal(proposal_id) for proposal_id, proposal in self.proposals.items() 
                 if not proposal["executed"]]
+    
+    # ================================
+    # Reward Pool Methods
+    # ================================
+    
+    def deposit_to_reward_pool(self, from_role: str, amount_eth: float) -> Dict[str, Any]:
+        """向奖金池充值ETH"""
+        try:
+            # 使用Web3Manager的send_reward功能来模拟充值
+            # 从指定角色向treasury账户转账
+            deposit_result = self.web3_manager.send_reward(from_role, 'treasury', amount_eth)
+            
+            if deposit_result["success"]:
+                # 更新奖金池余额（模拟）
+                self.reward_pool_balance += amount_eth
+                
+                # 保存状态到文件
+                self._save_reward_pool_state()
+                
+                logger.info(f"💰 Reward pool deposit: {amount_eth} ETH from {from_role}")
+                logger.info(f"📊 New pool balance: {self.reward_pool_balance} ETH")
+                
+                return {
+                    "success": True,
+                    "depositor_role": from_role,
+                    "amount": amount_eth,
+                    "new_balance": self.reward_pool_balance,
+                    "tx_hash": deposit_result["tx_hash"],
+                    "deposited_at": datetime.now().isoformat()
+                }
+            else:
+                raise Exception(f"Deposit transaction failed: {deposit_result['error']}")
+                
+        except Exception as e:
+            logger.error(f"❌ Reward pool deposit failed: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "depositor_role": from_role,
+                "amount": amount_eth
+            }
+    
+    def get_reward_pool_info(self) -> Dict[str, Any]:
+        """获取奖金池信息"""
+        try:
+            # 获取treasury账户的实际余额作为奖金池总额
+            treasury_info = self.web3_manager.get_account_info('treasury')
+            
+            return {
+                "balance": self.reward_pool_balance,
+                "balance_wei": self.web3_manager.w3.to_wei(self.reward_pool_balance, 'ether'),
+                "base_reward": 0.01,  # 基础奖励 0.01 ETH
+                "base_reward_wei": self.web3_manager.w3.to_wei(0.01, 'ether'),
+                "treasury_balance": treasury_info["balance_eth"],
+                "treasury_address": treasury_info["address"],
+                "last_updated": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to get reward pool info: {e}")
+            return {
+                "balance": 0,
+                "balance_wei": 0,
+                "base_reward": 0.01,
+                "base_reward_wei": self.web3_manager.w3.to_wei(0.01, 'ether'),
+                "error": str(e)
+            }
+    
+    def _initialize_reward_pool_balance(self):
+        """初始化奖金池余额（从数据库或状态文件恢复）"""
+        try:
+            # 简化实现：从文件恢复奖金池状态
+            state_file = os.path.join(os.path.dirname(__file__), '../assets/reward_pool_state.json')
+            if os.path.exists(state_file):
+                with open(state_file, 'r') as f:
+                    state = json.load(f)
+                    self.reward_pool_balance = state.get('balance', 0.0)
+                    logger.info(f"✅ 奖金池余额从状态文件恢复: {self.reward_pool_balance} ETH")
+            else:
+                logger.info("💰 奖金池状态文件不存在，余额设为 0.0 ETH")
+        except Exception as e:
+            logger.error(f"❌ 恢复奖金池状态失败: {e}")
+            self.reward_pool_balance = 0.0
+    
+    def _save_reward_pool_state(self):
+        """保存奖金池状态到文件"""
+        try:
+            state_file = os.path.join(os.path.dirname(__file__), '../assets/reward_pool_state.json')
+            state = {
+                'balance': self.reward_pool_balance,
+                'last_updated': datetime.now().isoformat()
+            }
+            with open(state_file, 'w') as f:
+                json.dump(state, f)
+            logger.debug(f"📝 奖金池状态已保存: {self.reward_pool_balance} ETH")
+        except Exception as e:
+            logger.error(f"❌ 保存奖金池状态失败: {e}")
+    
+    def _initialize_contributions(self):
+        """初始化Manager贡献度（从状态文件恢复）"""
+        try:
+            contrib_file = os.path.join(os.path.dirname(__file__), '../assets/contributions_state.json')
+            if os.path.exists(contrib_file):
+                with open(contrib_file, 'r') as f:
+                    self.contributions = json.load(f)
+                    logger.info(f"✅ Manager贡献度从状态文件恢复: {len(self.contributions)} 条记录")
+            else:
+                logger.info("💰 贡献度状态文件不存在，使用空记录")
+        except Exception as e:
+            logger.error(f"❌ 恢复Manager贡献度失败: {e}")
+            self.contributions = {}
+    
+    def _save_contributions_state(self):
+        """保存Manager贡献度到文件"""
+        try:
+            contrib_file = os.path.join(os.path.dirname(__file__), '../assets/contributions_state.json')
+            with open(contrib_file, 'w') as f:
+                json.dump(self.contributions, f, indent=2)
+            logger.debug(f"📝 Manager贡献度已保存: {len(self.contributions)} 条记录")
+        except Exception as e:
+            logger.error(f"❌ 保存Manager贡献度失败: {e}")
+    
+    def get_contribution(self, manager_address: str) -> Dict[str, Any]:
+        """获取Manager贡献记录"""
+        contribution = self.contributions.get(manager_address, {
+            "total_signatures": 0,
+            "total_response_time": 0,
+            "quality_score": 0,
+            "last_signature_time": None
+        })
+        
+        # 计算平均响应时间
+        avg_response_time = 0
+        if contribution["total_signatures"] > 0:
+            avg_response_time = contribution["total_response_time"] / contribution["total_signatures"]
+        
+        return {
+            "total_signatures": contribution["total_signatures"],
+            "avg_response_time": avg_response_time,
+            "quality_score": contribution["quality_score"],
+            "last_signature_time": contribution["last_signature_time"]
+        }
+    
+    def _update_contribution(self, manager_role: str, proposal_created_at: str):
+        """更新Manager贡献记录"""
+        try:
+            manager_address = self.web3_manager.accounts.get(manager_role)
+            if not manager_address:
+                logger.warning(f"⚠️  Manager address not found for role: {manager_role}")
+                return
+            
+            # 初始化贡献记录
+            if manager_address not in self.contributions:
+                self.contributions[manager_address] = {
+                    "total_signatures": 0,
+                    "total_response_time": 0,
+                    "quality_score": 0,
+                    "last_signature_time": None
+                }
+            
+            contribution = self.contributions[manager_address]
+            
+            # 计算响应时间
+            current_time = datetime.now()
+            created_time = datetime.fromisoformat(proposal_created_at)
+            response_time_seconds = (current_time - created_time).total_seconds()
+            
+            # 更新统计
+            contribution["total_signatures"] += 1
+            contribution["total_response_time"] += response_time_seconds
+            contribution["last_signature_time"] = current_time.isoformat()
+            
+            # 计算质量评分（0-100分标准化）
+            contribution["quality_score"] = self._calculate_quality_score(
+                response_time_seconds, 
+                contribution["last_signature_time"]
+            )
+            
+            logger.info(f"📈 Updated contribution for {manager_role}: {contribution['total_signatures']} signatures, quality: {contribution['quality_score']}")
+            
+            # 保存贡献度状态
+            self._save_contributions_state()
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to update contribution for {manager_role}: {e}")
+    
+    def _calculate_quality_score(self, response_time_seconds: float, last_signature_time: str) -> int:
+        """计算质量评分（0-100分）"""
+        # 响应速度分（60%权重）
+        if response_time_seconds <= 10:
+            speed_score = 60
+        elif response_time_seconds <= 30:
+            speed_score = 50
+        elif response_time_seconds <= 60:
+            speed_score = 40
+        elif response_time_seconds <= 120:
+            speed_score = 30
+        elif response_time_seconds <= 300:
+            speed_score = 20
+        else:
+            speed_score = 10
+        
+        # 活跃度分（40%权重）
+        try:
+            last_time = datetime.fromisoformat(last_signature_time)
+            minutes_since_last = (datetime.now() - last_time).total_seconds() / 60
+            
+            if minutes_since_last <= 10:
+                activity_score = 40
+            elif minutes_since_last <= 30:
+                activity_score = 30
+            elif minutes_since_last <= 60:
+                activity_score = 20
+            else:
+                activity_score = 10
+        except:
+            # 如果是第一次签名，给满分活跃度
+            activity_score = 40
+        
+        return int(speed_score + activity_score)  # 0-100分
+    
+    def distribute_contribution_rewards(self, admin_role: str) -> Dict[str, Any]:
+        """分配基于贡献度的奖励"""
+        try:
+            if self.reward_pool_balance <= 0.1:  # 保留一些基础奖励
+                raise ValueError("Insufficient reward pool balance")
+            
+            # 计算总贡献分数
+            total_contribution_score = 0
+            manager_scores = {}
+            
+            for manager_role in ["manager_0", "manager_1", "manager_2"]:
+                manager_address = self.web3_manager.accounts.get(manager_role)
+                if manager_address and manager_address in self.contributions:
+                    contribution = self.contributions[manager_address]
+                    # 贡献分数 = 签名次数 + 质量分数/100
+                    score = contribution["total_signatures"] + (contribution["quality_score"] / 100)
+                    manager_scores[manager_role] = score
+                    total_contribution_score += score
+            
+            if total_contribution_score == 0:
+                logger.info("📊 No contributions to reward")
+                return {"success": True, "message": "No contributions to reward"}
+            
+            # 可分配奖励（保留0.1 ETH用于基础奖励）
+            available_rewards = max(0, self.reward_pool_balance - 0.1)
+            distribution_results = []
+            
+            # 按比例分配奖励
+            for manager_role, score in manager_scores.items():
+                if score > 0:
+                    reward_amount = (available_rewards * score) / total_contribution_score
+                    
+                    if reward_amount > 0.001:  # 最小奖励阈值
+                        reward_result = self.web3_manager.send_reward('treasury', manager_role, reward_amount)
+                        
+                        if reward_result["success"]:
+                            self.reward_pool_balance -= reward_amount
+                            distribution_results.append({
+                                "manager_role": manager_role,
+                                "reward_amount": reward_amount,
+                                "contribution_score": score,
+                                "tx_hash": reward_result["tx_hash"]
+                            })
+            
+            logger.info(f"🎁 Distributed {len(distribution_results)} contribution rewards")
+            
+            return {
+                "success": True,
+                "distributions": distribution_results,
+                "total_distributed": sum(r["reward_amount"] for r in distribution_results),
+                "remaining_pool": self.reward_pool_balance,
+                "distributed_at": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to distribute contribution rewards: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }

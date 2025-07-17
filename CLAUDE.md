@@ -157,10 +157,19 @@ GET  /api/logs/detections      # Threat detection audit trail
 GET  /api/logs/executions      # Response execution logs
 POST /api/test/reward          # Test reward sending function
 POST /api/accounts/fund        # Fund account from Treasury
+
+# Reward Pool Management (Phase A Complete)
+GET  /api/reward-pool/info      # Get reward pool balance and statistics
+GET  /api/reward-pool/contributions  # Get Manager contribution records  
+POST /api/reward-pool/deposit   # Deposit ETH to reward pool
+POST /api/test/auto-distribute  # Test automatic reward distribution
+# Note: Distribution is now automatic on proposal execution
 ```
 
 **Frontend Features (English Interface):**
 - **Dashboard**: System status, account balances, and quick actions
+  - **Reward Pool Management**: Pool balance display, Manager contribution tracking, deposit functionality
+  - **Real-time Updates**: Live contribution scores and quality ratings
 - **Threat Detection**: Real-time threat monitoring with attack simulation
 - **Proposals**: Multi-signature proposal management with role-based access
 - **History**: Comprehensive audit logs for detections and executions
@@ -184,6 +193,7 @@ POST /api/accounts/fund        # Fund account from Treasury
 - ✅ Complete threat detection → smart contract → execution → audit workflow
 - ✅ Vue 3 + Vite frontend with real Web3 account creation and management
 - ✅ **Phase 3.5: UI Internationalization** - All frontend text converted to English
+- ✅ **Phase A: Reward Pool Mechanism** - Complete reward pool system with contribution-based distribution
 
 **MultiSig Contract Features (Phase 4 Complete):**
 - ✅ Custom Solidity smart contract (`MultiSigProposal.sol`)
@@ -194,11 +204,17 @@ POST /api/accounts/fund        # Fund account from Treasury
 - ✅ On-chain audit trail via smart contract events
 - ✅ Backward compatibility with existing database-based proposal system
 
-**Known Issues & Future Improvements:**
-- 🔄 **Role System Needs Redesign**: Current Manager/Operator roles have identical functionality
-- 🔄 **Account Structure Optimization**: Move from dynamic account creation to fixed 10-account structure
-- 🔄 **Real Contract Deployment**: Current implementation uses simulated contract interactions
-- 🔄 **Permission Enforcement**: No backend validation of role-based access control
+**Phase A Optimizations (Complete):**
+- ✅ **Reward Pool Mechanism**: 100 ETH auto-initialized pool with contribution-based distribution
+- ✅ **Quality Scoring System**: 0-100 standardized scoring based on response speed (60%) + activity (40%)
+- ✅ **Contribution Algorithm**: Signature count (50%) + quality score (50%) for fair reward distribution
+- ✅ **Auto-Distribution**: 1 ETH automatically distributed when proposals execute
+- ✅ **Gaming Prevention**: Eliminates "final signer" advantage through merit-based rewards
+
+**Remaining Technical Challenges:**
+- 🔄 **Role System Logic Flaw**: Manager/Operator roles have identical functionality  
+- 🔄 **Centralized Control Issue**: Backend controls all blockchain interactions instead of users
+- 🔄 **Permission Validation Gap**: No backend validation of role-based access control
 
 ## Technical Implementation Details
 
@@ -208,13 +224,14 @@ POST /api/accounts/fund        # Fund account from Treasury
 - Treasury account (3) pays 0.01 ETH incentive to final proposal signer
 - Web3 integration handles all blockchain interactions via local Ganache
 
-**API Structure (Phase 4 Complete - Custom MultiSig):**
+**API Structure (Phase A Complete - Reward Pool System):**
 - **AI Integration**: Real Ensemble_Hybrid model with joblib-compatible preprocessors
 - **Database**: SQLite with ThreatDetectionLog, Proposal, ExecutionLog models (extended with contract fields)
 - **Blockchain**: Web3.py integration with Ganache + custom MultiSig smart contract
 - **MultiSig Contract**: Python integration module (`multisig_contract.py`) for seamless interaction
-- **Services**: ThreatDetectionService, ProposalService, SystemInfoService (MultiSig-enabled)
-- **Testing**: Comprehensive test suite with real attack simulation and contract integration
+- **Reward Pool System**: Persistent state management with contribution tracking and auto-distribution
+- **Services**: ThreatDetectionService, ProposalService, SystemInfoService, RewardPoolService (all fully integrated)
+- **Testing**: Comprehensive test suite including reward pool mechanism and contribution tracking
 
 **Threat Detection Confidence Levels:**
 - `>0.90`: Automatic response + execution logging
@@ -222,27 +239,59 @@ POST /api/accounts/fund        # Fund account from Treasury
 - `0.70-0.80`: Alert only, manual proposal creation by Operator
 - `<0.70`: Silent background logging
 
-## Next Phase: Role System & Account Architecture Redesign (Phase 5)
+## Next Development Phases: Advanced Blockchain Features
 
-**Planned Account Structure (Phase 5):**
-```
-Standard 10-Account Architecture (like Ganache Desktop):
-├── Manager_0, Manager_1, Manager_2 (indices 0-2) - Decision makers, can only SIGN proposals
-├── Treasury (index 3) - System treasury for reward payments  
-└── Operator_0 to Operator_5 (indices 4-9) - Front-line users, can only CREATE proposals
-```
+### **Phase 7: Reward Pool Mechanism** (2-3 days)
+**Objective**: Eliminate incentive gaming by implementing contribution-based reward distribution
 
-**Role Separation Design:**
-- **Managers (accounts 0-2)**: Can view and sign proposals, monitor system status, CANNOT create proposals
-- **Operators (accounts 4-9)**: Can create proposals, simulate attacks, monitor alerts, CANNOT sign proposals
-- **System**: Auto-creates proposals for high-confidence threats (>0.80) via MultiSig contract
+**Key Improvements:**
+- Replace "final signer gets reward" with contribution-based pool distribution
+- Track Manager performance metrics (signature count, response time, proposal quality)
+- Implement periodic reward distribution based on contribution scores
+- Add reward pool management and funding mechanisms
 
-**Implementation Plan (Phase 5):**
-1. **Phase 5.1**: Update account initialization to fixed 10-account structure
-2. **Phase 5.2**: Implement role-based permission validation in backend APIs
-3. **Phase 5.3**: Redesign frontend with role-specific interfaces and capabilities
-4. **Phase 5.4**: Deploy real MultiSig contract to replace simulated interactions
-5. **Phase 5.5**: Fix API issues (proposal signing, withdrawal functionality)
+**Technical Changes:**
+- Smart contract: Add reward pool management and contribution tracking
+- Backend: Implement contribution scoring and periodic distribution logic
+- Frontend: Display contribution metrics and reward pool status
+- Database: Add contribution records and reward distribution history
+
+### **Phase 8: Contract-Level Role Separation** (4-5 days)
+**Objective**: Move role validation to smart contract layer for true decentralization
+
+**Key Improvements:**
+- Implement role-based access control directly in smart contract
+- Separate Operator (proposal creation) and Manager (proposal signing) permissions
+- Remove backend role validation dependency
+- Enable role management through contract owner functions
+
+**Technical Changes:**
+- Smart contract: Add role mappings and function-level access control
+- Backend: Simplify API by removing role validation logic
+- Frontend: Update to respect contract-enforced role boundaries
+- Deployment: Setup role assignment during contract initialization
+
+### **Phase 9: MetaMask Integration** (7-10 days)
+**Objective**: Enable direct user wallet interaction for genuine Web3 experience
+
+**Key Improvements:**
+- Replace backend-controlled transactions with user-signed transactions
+- Implement MetaMask wallet connection and account management
+- Enable direct smart contract interaction from frontend
+- Provide seamless Web3 user experience with fallback options
+
+**Technical Changes:**
+- Frontend: Complete Web3 integration with MetaMask connector
+- Smart contract: Ensure compatibility with external wallet interactions
+- Backend: Add signature verification for MetaMask-signed transactions
+- UX: Design intuitive wallet connection and transaction confirmation flows
+
+### **Legacy Phase 5 Integration:**
+The original Phase 5 account structure improvements will be integrated into Phase 8:
+- Fixed 10-account structure (Manager_0-2, Treasury, Operator_0-5)
+- Role-specific frontend interfaces
+- API permission validation
+- Contract-based role management
 
 ## Development Guidelines
 

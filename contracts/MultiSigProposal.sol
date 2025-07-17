@@ -14,12 +14,28 @@ contract MultiSigProposal {
     event OwnerAdded(address indexed owner);
     event OwnerRemoved(address indexed owner);
     event ThresholdChanged(uint256 threshold);
+    event RewardPoolDeposit(address indexed depositor, uint256 amount, uint256 newBalance);
+    event RewardDistributed(address indexed recipient, uint256 amount, uint256 remainingPool);
+    event ContributionUpdated(address indexed manager, uint256 totalSignatures, uint256 avgResponseTime);
 
     // State variables
     mapping(address => bool) public isOwner;
     address[] public owners;
     uint256 public threshold;
     uint256 public proposalCount;
+    
+    // Reward Pool System
+    uint256 public rewardPool;
+    uint256 public constant BASE_REWARD = 0.01 ether;
+    
+    struct ContributionRecord {
+        uint256 totalSignatures;
+        uint256 totalResponseTime;
+        uint256 qualityScore;
+        uint256 lastSignatureTime;
+    }
+    
+    mapping(address => ContributionRecord) public contributions;
     
     struct Proposal {
         uint256 id;
@@ -121,6 +137,9 @@ contract MultiSigProposal {
         proposal.signatures[msg.sender] = true;
         proposal.signatureCount++;
         
+        // Update contribution record
+        _updateContribution(msg.sender, proposal.createdAt);
+        
         emit ProposalSigned(proposalId, msg.sender);
         
         // Auto-execute if threshold is met
@@ -144,6 +163,15 @@ contract MultiSigProposal {
         // Send ETH to target
         (bool success, ) = proposal.target.call{value: proposal.amount}(proposal.data);
         require(success, "Transaction failed");
+        
+        // Give immediate base reward to final signer from reward pool
+        if (rewardPool >= BASE_REWARD) {
+            rewardPool -= BASE_REWARD;
+            (bool rewardSuccess, ) = msg.sender.call{value: BASE_REWARD}("");
+            if (rewardSuccess) {
+                emit RewardDistributed(msg.sender, BASE_REWARD, rewardPool);
+            }
+        }
         
         emit ProposalExecuted(proposalId, msg.sender, proposal.target, proposal.amount);
     }
@@ -247,5 +275,123 @@ contract MultiSigProposal {
         require(newThreshold > 0 && newThreshold <= owners.length, "Invalid threshold");
         threshold = newThreshold;
         emit ThresholdChanged(newThreshold);
+    }
+    
+    /**
+     * @dev Deposit ETH to the reward pool
+     */
+    function depositToRewardPool() external payable {
+        require(msg.value > 0, "Must send ETH");
+        rewardPool += msg.value;
+        emit RewardPoolDeposit(msg.sender, msg.value, rewardPool);
+    }
+    
+    /**
+     * @dev Update contribution record for a manager
+     * @param manager Address of the manager
+     * @param proposalCreatedAt When the proposal was created
+     */
+    function _updateContribution(address manager, uint256 proposalCreatedAt) internal {
+        ContributionRecord storage record = contributions[manager];
+        
+        // Update signature count
+        record.totalSignatures++;
+        
+        // Calculate response time (current time - proposal creation time)
+        uint256 responseTime = block.timestamp - proposalCreatedAt;
+        record.totalResponseTime += responseTime;
+        record.lastSignatureTime = block.timestamp;
+        
+        // Simple quality score: faster response = higher quality
+        // Quality score is inverse of average response time (scaled)
+        uint256 avgResponseTime = record.totalResponseTime / record.totalSignatures;
+        if (avgResponseTime > 0) {
+            record.qualityScore = (1 hours * 100) / avgResponseTime; // Scale factor
+        }
+        
+        emit ContributionUpdated(manager, record.totalSignatures, avgResponseTime);
+    }
+    
+    /**
+     * @dev Get contribution record for a manager
+     * @param manager Address of the manager
+     * @return totalSignatures Total number of signatures
+     * @return avgResponseTime Average response time in seconds
+     * @return qualityScore Quality score (higher = better)
+     * @return lastSignatureTime Timestamp of last signature
+     */
+    function getContribution(address manager) 
+        external 
+        view 
+        returns (
+            uint256 totalSignatures,
+            uint256 avgResponseTime,
+            uint256 qualityScore,
+            uint256 lastSignatureTime
+        ) 
+    {
+        ContributionRecord storage record = contributions[manager];
+        uint256 avg = record.totalSignatures > 0 ? 
+            record.totalResponseTime / record.totalSignatures : 0;
+        
+        return (
+            record.totalSignatures,
+            avg,
+            record.qualityScore,
+            record.lastSignatureTime
+        );
+    }
+    
+    /**
+     * @dev Get reward pool information
+     * @return balance Current reward pool balance
+     * @return baseReward Base reward amount
+     */
+    function getRewardPoolInfo() external view returns (uint256 balance, uint256 baseReward) {
+        return (rewardPool, BASE_REWARD);
+    }
+    
+    /**
+     * @dev Distribute rewards based on contribution (only owner can call)
+     * This function can be called periodically to distribute accumulated rewards
+     */
+    function distributeContributionRewards() external onlyOwner {
+        require(rewardPool > 0, "No rewards to distribute");
+        
+        uint256 totalContributionScore = 0;
+        
+        // Calculate total contribution score
+        for (uint256 i = 0; i < owners.length; i++) {
+            address owner = owners[i];
+            ContributionRecord storage record = contributions[owner];
+            if (record.totalSignatures > 0) {
+                // Contribution score combines signature count and quality
+                totalContributionScore += record.totalSignatures + (record.qualityScore / 100);
+            }
+        }
+        
+        if (totalContributionScore == 0) return;
+        
+        // Distribute proportionally
+        uint256 availableRewards = rewardPool > BASE_REWARD * owners.length ? 
+            rewardPool - (BASE_REWARD * owners.length) : 0; // Keep some for base rewards
+            
+        for (uint256 i = 0; i < owners.length; i++) {
+            address owner = owners[i];
+            ContributionRecord storage record = contributions[owner];
+            
+            if (record.totalSignatures > 0) {
+                uint256 contributionScore = record.totalSignatures + (record.qualityScore / 100);
+                uint256 reward = (availableRewards * contributionScore) / totalContributionScore;
+                
+                if (reward > 0 && rewardPool >= reward) {
+                    rewardPool -= reward;
+                    (bool success, ) = owner.call{value: reward}("");
+                    if (success) {
+                        emit RewardDistributed(owner, reward, rewardPool);
+                    }
+                }
+            }
+        }
     }
 }

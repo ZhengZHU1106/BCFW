@@ -44,5 +44,23 @@ export const systemAPI = {
       to_address: toAddress,
       amount: amount
     })
-  }
+  },
+
+  // 奖金池管理
+  getRewardPoolInfo() {
+    return apiClient.get('/reward-pool/info')
+  },
+
+  getManagerContributions() {
+    return apiClient.get('/reward-pool/contributions')
+  },
+
+  depositToRewardPool(fromRole, amount) {
+    return apiClient.post('/reward-pool/deposit', {
+      from_role: fromRole,
+      amount: amount
+    })
+  },
+
+  // distributeContributionRewards API已移除 - 现在使用自动分配机制
 }

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from backend.database.connection import init_database, get_db
 from backend.blockchain.web3_manager import init_web3_manager
 from backend.ai_module.model_loader import init_threat_model
-from backend.app.services import ThreatDetectionService, ProposalService, SystemInfoService
+from backend.app.services import ThreatDetectionService, ProposalService, SystemInfoService, RewardPoolService
 
 # 配置日志
 logging.basicConfig(
@@ -37,6 +37,27 @@ async def lifespan(app: FastAPI):
         # 初始化AI模型
         logger.info("🤖 初始化AI模型...")
         init_threat_model()
+        
+        # 初始化奖金池
+        logger.info("💰 初始化奖金池...")
+        try:
+            from backend.app.services import RewardPoolService
+            reward_pool_service = RewardPoolService()
+            
+            # 检查奖金池当前余额
+            pool_info = reward_pool_service.get_reward_pool_info()
+            if pool_info["success"] and pool_info["pool_info"]["balance"] < 50.0:
+                # 如果奖金池余额低于50 ETH，则充值到100 ETH
+                needed_amount = 100.0 - pool_info["pool_info"]["balance"]
+                deposit_result = reward_pool_service.deposit_to_reward_pool("treasury", needed_amount)
+                if deposit_result["success"]:
+                    logger.info(f"✅ 奖金池初始化成功: 充值 {needed_amount} ETH，当前余额 100 ETH")
+                else:
+                    logger.error(f"❌ 奖金池初始化失败: {deposit_result.get('error')}")
+            else:
+                logger.info(f"✅ 奖金池已有足够余额: {pool_info['pool_info']['balance']} ETH")
+        except Exception as e:
+            logger.error(f"❌ 奖金池初始化异常: {e}")
         
         logger.info("✅ 系统初始化完成！")
         
@@ -69,6 +90,7 @@ app.add_middleware(
 threat_service = ThreatDetectionService()
 proposal_service = ProposalService()
 system_service = SystemInfoService()
+reward_pool_service = RewardPoolService()
 
 @app.get("/")
 async def root():
@@ -251,7 +273,7 @@ async def fund_account(to_address: str, amount: float = 1.0):
             transaction, 
             private_key=treasury_private_key
         )
-        tx_hash = web3_manager.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+        tx_hash = web3_manager.w3.eth.send_raw_transaction(signed_txn.raw_transaction)
         
         # 等待交易确认
         receipt = web3_manager.w3.eth.wait_for_transaction_receipt(tx_hash)
@@ -309,6 +331,79 @@ async def test_reward_sending(from_role: str = "treasury", to_role: str = "manag
         }
     except Exception as e:
         logger.error(f"奖励发送测试失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# 奖金池管理API
+@app.get("/api/reward-pool/info")
+async def get_reward_pool_info():
+    """获取奖金池信息"""
+    try:
+        result = reward_pool_service.get_reward_pool_info()
+        return {
+            "success": result["success"],
+            "pool_info": result.get("pool_info", {}),
+            "error": result.get("error"),
+            "message": "奖金池信息获取成功" if result["success"] else "奖金池信息获取失败"
+        }
+    except Exception as e:
+        logger.error(f"获取奖金池信息失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/reward-pool/contributions")
+async def get_manager_contributions():
+    """获取Manager贡献记录"""
+    try:
+        result = reward_pool_service.get_manager_contributions()
+        return {
+            "success": result["success"],
+            "contributions": result.get("contributions", {}),
+            "error": result.get("error"),
+            "message": "Manager贡献记录获取成功" if result["success"] else "Manager贡献记录获取失败"
+        }
+    except Exception as e:
+        logger.error(f"获取Manager贡献记录失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/reward-pool/deposit")
+async def deposit_to_reward_pool(request_data: dict):
+    """向奖金池充值"""
+    try:
+        from_role = request_data.get("from_role", "treasury")
+        amount = request_data.get("amount", 0.1)
+        
+        if amount <= 0:
+            raise HTTPException(status_code=400, detail="充值金额必须大于0")
+        
+        result = reward_pool_service.deposit_to_reward_pool(from_role, amount)
+        return {
+            "success": result["success"],
+            "message": result.get("message", "奖金池充值操作完成"),
+            "data": {
+                "depositor_role": result.get("depositor_role"),
+                "amount": result.get("amount"),
+                "new_balance": result.get("new_balance"),
+                "tx_hash": result.get("tx_hash")
+            },
+            "error": result.get("error")
+        }
+    except Exception as e:
+        logger.error(f"奖金池充值失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# 手动分配API已移除 - 现在使用自动分配机制
+
+@app.post("/api/test/auto-distribute")
+async def test_auto_distribute():
+    """测试自动分配机制"""
+    try:
+        result = reward_pool_service._auto_distribute_on_execution()
+        return {
+            "success": True,
+            "auto_distribution_result": result,
+            "message": "自动分配测试完成"
+        }
+    except Exception as e:
+        logger.error(f"自动分配测试失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

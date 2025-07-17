@@ -331,13 +331,41 @@ class ProposalService:
             
             proposal.executed_at = datetime.now()
             
-            return {
+            # 准备返回结果
+            result = {
                 "status": "approved_and_executed",
                 "execution_log_id": execution_log.id,
                 "reward_paid": reward_result["success"],
                 "reward_tx_hash": reward_result.get("tx_hash"),
-                "message": "提案已批准并执行，奖励已发送"
+                "message": "提案已批准并执行，奖励已发送",
+                "auto_distributed": False,
+                "distribution_amount": 0
             }
+            
+            # 自动触发基于贡献度的奖励分配
+            try:
+                # 使用当前实例直接调用（这里的self是ProposalService实例）
+                # 需要获取RewardPoolService实例
+                reward_pool_service = RewardPoolService()
+                auto_distribution = reward_pool_service._auto_distribute_on_execution()
+                
+                if auto_distribution.get("success"):
+                    distributions = auto_distribution.get("distributions", [])
+                    if distributions:
+                        logger.info(f"💰 自动分配奖励完成: 分配给 {len(distributions)} 个Manager")
+                        # 在返回结果中包含自动分配信息
+                        result["auto_distributed"] = True
+                        result["distribution_amount"] = auto_distribution.get("total_distributed", 0)
+                        result["distributions"] = distributions
+                    else:
+                        logger.info("💰 自动分配奖励: 暂无符合条件的Manager")
+                else:
+                    logger.warning(f"💰 自动分配奖励未触发: {auto_distribution.get('message')}")
+                    
+            except Exception as e:
+                logger.error(f"❌ 自动分配奖励失败: {e}")
+            
+            return result
             
         except Exception as e:
             logger.error(f"❌ 执行提案失败: {e}")
@@ -391,3 +419,316 @@ class SystemInfoService:
             "pending_proposals": db.query(Proposal).filter(Proposal.status == "pending").count(),
             "total_executions": db.query(ExecutionLog).count()
         }
+
+class RewardPoolService:
+    """奖金池管理服务"""
+    
+    def __init__(self):
+        self.web3_manager = get_web3_manager()
+    
+    def deposit_to_reward_pool(self, from_role: str, amount_eth: float) -> Dict:
+        """向奖金池充值"""
+        try:
+            result = self.web3_manager.deposit_to_reward_pool(from_role, amount_eth)
+            
+            if result["success"]:
+                logger.info(f"💰 奖金池充值成功: {amount_eth} ETH from {from_role}")
+                return {
+                    "success": True,
+                    "message": f"Successfully deposited {amount_eth} ETH to reward pool",
+                    "depositor_role": from_role,
+                    "amount": amount_eth,
+                    "new_balance": result.get("new_balance", 0),
+                    "tx_hash": result.get("tx_hash")
+                }
+            else:
+                logger.error(f"❌ 奖金池充值失败: {result['error']}")
+                return {
+                    "success": False,
+                    "error": result["error"],
+                    "message": "Failed to deposit to reward pool"
+                }
+        
+        except Exception as e:
+            logger.error(f"❌ 奖金池充值异常: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "message": "Exception during reward pool deposit"
+            }
+    
+    def get_reward_pool_info(self) -> Dict:
+        """获取奖金池信息"""
+        try:
+            result = self.web3_manager.get_reward_pool_info()
+            
+            if result["success"]:
+                pool_info = result["pool_info"]
+                return {
+                    "success": True,
+                    "pool_info": {
+                        "balance": pool_info["balance"],
+                        "balance_wei": pool_info["balance_wei"],
+                        "base_reward": pool_info["base_reward"],
+                        "base_reward_wei": pool_info["base_reward_wei"],
+                        "treasury_balance": pool_info.get("treasury_balance", 0),
+                        "treasury_address": pool_info.get("treasury_address"),
+                        "last_updated": pool_info.get("last_updated")
+                    }
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": result["error"],
+                    "pool_info": {
+                        "balance": 0,
+                        "base_reward": 0.01
+                    }
+                }
+        
+        except Exception as e:
+            logger.error(f"❌ 获取奖金池信息失败: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "pool_info": {
+                    "balance": 0,
+                    "base_reward": 0.01
+                }
+            }
+    
+    def get_manager_contributions(self) -> Dict:
+        """获取所有Manager贡献记录"""
+        try:
+            result = self.web3_manager.get_all_manager_contributions()
+            
+            if result["success"]:
+                contributions = result["contributions"]
+                
+                # 格式化贡献数据
+                formatted_contributions = {}
+                for manager_role, contrib_data in contributions.items():
+                    formatted_contributions[manager_role] = {
+                        "address": contrib_data["address"],
+                        "total_signatures": contrib_data["total_signatures"],
+                        "avg_response_time": contrib_data["avg_response_time"],
+                        "quality_score": contrib_data["quality_score"],
+                        "last_signature_time": contrib_data["last_signature_time"],
+                        "performance_grade": self._calculate_performance_grade(contrib_data)
+                    }
+                
+                return {
+                    "success": True,
+                    "contributions": formatted_contributions
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": result["error"],
+                    "contributions": {}
+                }
+        
+        except Exception as e:
+            logger.error(f"❌ 获取Manager贡献记录失败: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "contributions": {}
+            }
+    
+    def distribute_contribution_rewards(self, admin_role: str = "manager_0") -> Dict:
+        """分配基于贡献度的奖励"""
+        try:
+            result = self.web3_manager.distribute_contribution_rewards(admin_role)
+            
+            if result["success"]:
+                distributions = result.get("distributions", [])
+                total_distributed = result.get("total_distributed", 0)
+                
+                logger.info(f"🎁 贡献奖励分配完成: 总计 {total_distributed} ETH 分配给 {len(distributions)} 位Manager")
+                
+                return {
+                    "success": True,
+                    "message": f"Successfully distributed {total_distributed} ETH to {len(distributions)} managers",
+                    "distributions": distributions,
+                    "total_distributed": total_distributed,
+                    "remaining_pool": result.get("remaining_pool", 0),
+                    "distributed_at": result.get("distributed_at")
+                }
+            else:
+                logger.error(f"❌ 贡献奖励分配失败: {result['error']}")
+                return {
+                    "success": False,
+                    "error": result["error"],
+                    "message": "Failed to distribute contribution rewards"
+                }
+        
+        except Exception as e:
+            logger.error(f"❌ 贡献奖励分配异常: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "message": "Exception during reward distribution"
+            }
+    
+    def get_reward_pool_dashboard(self) -> Dict:
+        """获取奖金池仪表板数据"""
+        try:
+            # 获取奖金池信息
+            pool_result = self.get_reward_pool_info()
+            
+            # 获取Manager贡献信息
+            contrib_result = self.get_manager_contributions()
+            
+            # 计算统计数据
+            total_signatures = 0
+            active_managers = 0
+            
+            if contrib_result["success"]:
+                for manager_data in contrib_result["contributions"].values():
+                    total_signatures += manager_data["total_signatures"]
+                    if manager_data["total_signatures"] > 0:
+                        active_managers += 1
+            
+            dashboard_data = {
+                "pool_info": pool_result.get("pool_info", {}),
+                "contributions": contrib_result.get("contributions", {}),
+                "statistics": {
+                    "total_signatures": total_signatures,
+                    "active_managers": active_managers,
+                    "total_managers": 3,
+                    "pool_utilization": self._calculate_pool_utilization(pool_result.get("pool_info", {}))
+                },
+                "last_updated": datetime.now().isoformat()
+            }
+            
+            return {
+                "success": True,
+                "dashboard": dashboard_data
+            }
+        
+        except Exception as e:
+            logger.error(f"❌ 获取奖金池仪表板失败: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "dashboard": {}
+            }
+    
+    def _calculate_performance_grade(self, contrib_data: Dict) -> str:
+        """计算Manager性能等级"""
+        signatures = contrib_data.get("total_signatures", 0)
+        quality_score = contrib_data.get("quality_score", 0)
+        
+        # 计算综合贡献度（0-100分）
+        contribution_score = self._calculate_contribution_score(signatures, quality_score)
+        
+        if signatures == 0:
+            return "No Activity"
+        elif contribution_score >= 80:
+            return "Excellent"
+        elif contribution_score >= 60:
+            return "Good"
+        elif contribution_score >= 40:
+            return "Average"
+        else:
+            return "Needs Improvement"
+    
+    def _calculate_contribution_score(self, total_signatures: int, quality_score: int) -> float:
+        """计算贡献度评分（0-100分）"""
+        # 签名次数得分（10次签名满分，占50%权重）
+        signature_score = min(100, total_signatures * 10)
+        
+        # 综合贡献度：签名次数50% + 质量评分50%
+        contribution_score = signature_score * 0.5 + quality_score * 0.5
+        
+        return contribution_score
+    
+    def _auto_distribute_on_execution(self) -> Dict:
+        """提案执行完成时自动分配奖励"""
+        try:
+            # 获取所有Manager的贡献度
+            contributions_result = self.get_manager_contributions()
+            if not contributions_result["success"]:
+                return {"success": False, "message": "无法获取Manager贡献信息"}
+            
+            contributions = contributions_result["contributions"]
+            
+            # 计算符合条件的Manager（贡献度 > 0）
+            eligible_managers = {}
+            total_contribution_score = 0
+            
+            for manager_role, contrib_data in contributions.items():
+                signatures = contrib_data.get("total_signatures", 0)
+                quality_score = contrib_data.get("quality_score", 0)
+                
+                if signatures > 0:  # 只有有签名记录的Manager参与分配
+                    contribution_score = self._calculate_contribution_score(signatures, quality_score)
+                    eligible_managers[manager_role] = contribution_score
+                    total_contribution_score += contribution_score
+            
+            if total_contribution_score == 0:
+                return {"success": True, "message": "暂无符合条件的Manager"}
+            
+            # 检查奖金池余额
+            pool_result = self.get_reward_pool_info()
+            if not pool_result["success"] or pool_result["pool_info"]["balance"] < 1.0:
+                return {"success": False, "message": "奖金池余额不足（需要至少1 ETH）"}
+            
+            # 分配1 ETH奖励
+            distribution_amount = 1.0
+            distributions = []
+            
+            for manager_role, contribution_score in eligible_managers.items():
+                reward_amount = (contribution_score / total_contribution_score) * distribution_amount
+                
+                if reward_amount > 0.001:  # 最小奖励阈值
+                    reward_result = self.web3_manager.send_reward('treasury', manager_role, reward_amount)
+                    
+                    if reward_result["success"]:
+                        distributions.append({
+                            "manager_role": manager_role,
+                            "reward_amount": reward_amount,
+                            "contribution_score": contribution_score,
+                            "tx_hash": reward_result["tx_hash"]
+                        })
+            
+            # 更新奖金池余额（模拟）
+            total_distributed = sum(d["reward_amount"] for d in distributions)
+            if hasattr(self.web3_manager, 'multisig_contract') and self.web3_manager.multisig_contract:
+                self.web3_manager.multisig_contract.reward_pool_balance -= total_distributed
+                # 保存奖金池状态
+                self.web3_manager.multisig_contract._save_reward_pool_state()
+            
+            logger.info(f"🎁 自动分配完成: {len(distributions)}位Manager获得奖励，总计{total_distributed} ETH")
+            
+            return {
+                "success": True,
+                "message": f"Successfully distributed {total_distributed} ETH to {len(distributions)} managers",
+                "distributions": distributions,
+                "total_distributed": total_distributed,
+                "distributed_at": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ 自动分配奖励失败: {e}")
+            return {"success": False, "error": str(e)}
+    
+    def _calculate_contribution_score(self, total_signatures: int, quality_score: int) -> float:
+        """计算贡献度评分（0-100分）"""
+        # 签名次数得分（10次签名满分，占50%权重）
+        signature_score = min(100, total_signatures * 10)
+        
+        # 综合贡献度：签名次数50% + 质量评分50%
+        contribution_score = signature_score * 0.5 + quality_score * 0.5
+        
+        return contribution_score
+    
+    def _calculate_pool_utilization(self, pool_info: Dict) -> float:
+        """计算奖金池利用率"""
+        balance = pool_info.get("balance", 0)
+        treasury_balance = pool_info.get("treasury_balance", 0)
+        
+        if treasury_balance > 0:
+            return min(100.0, (balance / treasury_balance) * 100)
+        return 0.0

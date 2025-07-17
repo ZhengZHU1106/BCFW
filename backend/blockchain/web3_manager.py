@@ -129,7 +129,7 @@ class Web3Manager:
             
             # 签名并发送交易
             signed_txn = self.w3.eth.account.sign_transaction(transaction, from_private_key)
-            tx_hash = self.w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+            tx_hash = self.w3.eth.send_raw_transaction(signed_txn.raw_transaction)
             
             # 等待交易确认
             receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
@@ -291,6 +291,128 @@ class Web3Manager:
         except Exception as e:
             logger.error(f"❌ Failed to check multisig signature: {e}")
             return False
+    
+    # ================================
+    # Reward Pool Methods
+    # ================================
+    
+    def deposit_to_reward_pool(self, from_role: str, amount_eth: float) -> Dict:
+        """向奖金池充值ETH"""
+        if not self.multisig_contract:
+            return {
+                "success": False,
+                "error": "MultiSig contract not initialized"
+            }
+        
+        try:
+            return self.multisig_contract.deposit_to_reward_pool(from_role, amount_eth)
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to deposit to reward pool: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    
+    def get_reward_pool_info(self) -> Dict:
+        """获取奖金池信息"""
+        if not self.multisig_contract:
+            return {
+                "success": False,
+                "error": "MultiSig contract not initialized"
+            }
+        
+        try:
+            pool_info = self.multisig_contract.get_reward_pool_info()
+            return {
+                "success": True,
+                "pool_info": pool_info
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to get reward pool info: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    
+    def get_manager_contribution(self, manager_role: str) -> Dict:
+        """获取Manager贡献记录"""
+        if not self.multisig_contract:
+            return {
+                "success": False,
+                "error": "MultiSig contract not initialized"
+            }
+        
+        try:
+            manager_address = self.accounts.get(manager_role)
+            if not manager_address:
+                raise ValueError(f"Unknown manager role: {manager_role}")
+            
+            contribution = self.multisig_contract.get_contribution(manager_address)
+            return {
+                "success": True,
+                "contribution": contribution
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to get manager contribution: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    
+    def get_all_manager_contributions(self) -> Dict:
+        """获取所有Manager的贡献记录"""
+        if not self.multisig_contract:
+            return {
+                "success": False,
+                "error": "MultiSig contract not initialized"
+            }
+        
+        try:
+            contributions = {}
+            
+            # 获取所有Manager角色的贡献
+            manager_roles = ["manager_0", "manager_1", "manager_2"]
+            for role in manager_roles:
+                if role in self.accounts:
+                    manager_address = self.accounts[role]
+                    contribution = self.multisig_contract.get_contribution(manager_address)
+                    contributions[role] = {
+                        "address": manager_address,
+                        **contribution
+                    }
+            
+            return {
+                "success": True,
+                "contributions": contributions
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to get all manager contributions: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    
+    def distribute_contribution_rewards(self, admin_role: str = "manager_0") -> Dict:
+        """分配基于贡献度的奖励"""
+        if not self.multisig_contract:
+            return {
+                "success": False,
+                "error": "MultiSig contract not initialized"
+            }
+        
+        try:
+            return self.multisig_contract.distribute_contribution_rewards(admin_role)
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to distribute contribution rewards: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
 
 # 全局Web3管理器实例
 web3_manager = None
