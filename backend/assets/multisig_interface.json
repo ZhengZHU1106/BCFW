@@ -75,60 +75,6 @@
           "type": "uint256"
         }
       ]
-    },
-    {
-      "type": "function",
-      "name": "depositToRewardPool",
-      "inputs": [],
-      "payable": true
-    },
-    {
-      "type": "function",
-      "name": "getContribution",
-      "inputs": [
-        {
-          "name": "manager",
-          "type": "address"
-        }
-      ],
-      "outputs": [
-        {
-          "name": "totalSignatures",
-          "type": "uint256"
-        },
-        {
-          "name": "avgResponseTime",
-          "type": "uint256"
-        },
-        {
-          "name": "qualityScore",
-          "type": "uint256"
-        },
-        {
-          "name": "lastSignatureTime",
-          "type": "uint256"
-        }
-      ]
-    },
-    {
-      "type": "function",
-      "name": "getRewardPoolInfo",
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "balance",
-          "type": "uint256"
-        },
-        {
-          "name": "baseReward",
-          "type": "uint256"
-        }
-      ]
-    },
-    {
-      "type": "function",
-      "name": "distributeContributionRewards",
-      "inputs": []
     }
   ],
   "events": [
@@ -192,63 +138,6 @@
         },
         {
           "name": "amount",
-          "type": "uint256"
-        }
-      ]
-    },
-    {
-      "type": "event",
-      "name": "RewardPoolDeposit",
-      "inputs": [
-        {
-          "name": "depositor",
-          "type": "address",
-          "indexed": true
-        },
-        {
-          "name": "amount",
-          "type": "uint256"
-        },
-        {
-          "name": "newBalance",
-          "type": "uint256"
-        }
-      ]
-    },
-    {
-      "type": "event",
-      "name": "RewardDistributed",
-      "inputs": [
-        {
-          "name": "recipient",
-          "type": "address",
-          "indexed": true
-        },
-        {
-          "name": "amount",
-          "type": "uint256"
-        },
-        {
-          "name": "remainingPool",
-          "type": "uint256"
-        }
-      ]
-    },
-    {
-      "type": "event",
-      "name": "ContributionUpdated",
-      "inputs": [
-        {
-          "name": "manager",
-          "type": "address",
-          "indexed": true
-        },
-        {
-          "name": "totalSignatures",
-          "type": "uint256"
-        },
-        {
-          "name": "avgResponseTime",
           "type": "uint256"
         }
       ]

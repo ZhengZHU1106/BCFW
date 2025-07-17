@@ -156,11 +156,12 @@ class ThreatDetectionService:
         db.add(proposal)
         db.flush()  # 获取ID
         
-        # 使用MultiSig合约创建提案
+        # 使用MultiSig合约创建提案（系统自动创建，不需要角色验证）
         multisig_result = self.web3_manager.create_multisig_proposal(
             target_role="manager_0",  # 奖励目标（这里可以动态确定）
             amount_eth=INCENTIVE_CONFIG['proposal_reward'],
-            data="0x"
+            data="0x",
+            creator_role="system"  # 系统自动创建
         )
         
         if multisig_result["success"]:
@@ -187,9 +188,15 @@ class ProposalService:
         self.web3_manager = get_web3_manager()
     
     def create_manual_proposal(self, db: Session, detection_id: int, 
-                             operator_action: str = "block") -> Dict:
-        """创建手动提案（Operator操作）"""
+                             operator_action: str = "block", operator_role: str = None) -> Dict:
+        """创建手动提案（Operator操作） - 现在使用角色验证"""
         try:
+            # 角色验证将由合约层处理，这里只记录操作者
+            if operator_role:
+                # 可以添加简单的角色格式验证
+                if not (operator_role.startswith("operator_") or operator_role.startswith("manager_")):
+                    raise ValueError(f"无效的角色格式: {operator_role}")
+            
             # 查找检测记录
             detection_log = db.query(ThreatDetectionLog).filter(
                 ThreatDetectionLog.id == detection_id
@@ -210,6 +217,24 @@ class ProposalService:
             )
             
             db.add(proposal)
+            db.flush()  # 获取ID
+            
+            # 使用MultiSig合约创建提案（如果提供了角色）
+            if operator_role:
+                multisig_result = self.web3_manager.create_multisig_proposal(
+                    target_role="manager_0",  # 奖励目标
+                    amount_eth=INCENTIVE_CONFIG['proposal_reward'],
+                    data="0x",
+                    creator_role=operator_role
+                )
+                
+                if multisig_result["success"]:
+                    proposal.contract_proposal_id = multisig_result["proposal_id"]
+                    proposal.contract_address = multisig_result["contract_address"]
+                    logger.info(f"📝 手动创建MultiSig提案: DB-ID-{proposal.id}, Contract-ID-{multisig_result['proposal_id']}, Creator-{operator_role}")
+                else:
+                    logger.error(f"❌ MultiSig提案创建失败: {multisig_result['error']}")
+            
             db.commit()
             
             # 更新检测日志
@@ -217,12 +242,14 @@ class ProposalService:
             detection_log.action_taken = "manual_proposal_created"
             db.commit()
             
-            logger.info(f"📝 手动创建提案: ID-{proposal.id} by Operator")
+            logger.info(f"📝 手动创建提案: ID-{proposal.id} by {operator_role or 'Operator'}")
             
             return {
                 "proposal_id": proposal.id,
                 "status": "created",
-                "message": "提案创建成功，等待Manager签名"
+                "message": "提案创建成功，等待Manager签名",
+                "creator_role": operator_role,
+                "contract_proposal_id": proposal.contract_proposal_id
             }
             
         except Exception as e:
@@ -231,7 +258,7 @@ class ProposalService:
             raise
     
     def sign_proposal(self, db: Session, proposal_id: int, manager_role: str) -> Dict:
-        """Manager签名提案 (使用MultiSig合约)"""
+        """Manager签名提案 (使用MultiSig合约) - 现在使用角色验证"""
         try:
             # 查找提案
             proposal = db.query(Proposal).filter(Proposal.id == proposal_id).first()
@@ -258,7 +285,9 @@ class ProposalService:
                     logger.info(f"✅ MultiSig合约签名成功: Contract-ID-{proposal.contract_proposal_id} by {manager_role}")
                 else:
                     logger.error(f"❌ MultiSig合约签名失败: {multisig_result['error']}")
-                    # 继续传统签名流程
+                    # 如果合约签名失败，可能是角色权限问题
+                    if "not authorized" in multisig_result.get("error", "").lower():
+                        raise ValueError(f"Manager {manager_role} 没有权限签名此提案")
             
             # 更新传统签名信息（向后兼容）
             signed_by.append(manager_role)

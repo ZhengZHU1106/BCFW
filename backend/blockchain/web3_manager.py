@@ -191,8 +191,8 @@ class Web3Manager:
     # MultiSig Contract Methods
     # ================================
     
-    def create_multisig_proposal(self, target_role: str, amount_eth: float, data: str = "0x") -> Dict:
-        """创建多签名提案"""
+    def create_multisig_proposal(self, target_role: str, amount_eth: float, data: str = "0x", creator_role: str = None) -> Dict:
+        """创建多签名提案 - 现在支持角色验证"""
         if not self.multisig_contract:
             return {
                 "success": False,
@@ -204,7 +204,7 @@ class Web3Manager:
             if not target_address:
                 raise ValueError(f"Unknown target role: {target_role}")
             
-            return self.multisig_contract.create_proposal(target_address, amount_eth, data)
+            return self.multisig_contract.create_proposal(target_address, amount_eth, data, creator_role)
             
         except Exception as e:
             logger.error(f"❌ Failed to create multisig proposal: {e}")

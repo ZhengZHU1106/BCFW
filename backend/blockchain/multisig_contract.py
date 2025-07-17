@@ -55,9 +55,14 @@ class MultiSigContract:
                 "chainId": 1337
             }
     
-    def create_proposal(self, target: str, amount: float, data: str = "0x") -> Dict[str, Any]:
-        """创建多签名提案"""
+    def create_proposal(self, target: str, amount: float, data: str = "0x", creator_role: str = None) -> Dict[str, Any]:
+        """创建多签名提案 - 现在检查角色权限"""
         try:
+            # 检查创建者角色权限
+            if creator_role:
+                if not self.is_authorized_creator(creator_role):
+                    raise ValueError(f"Role {creator_role} is not authorized to create proposals")
+            
             proposal_id = self.proposal_counter
             self.proposal_counter += 1
             
@@ -72,14 +77,15 @@ class MultiSigContract:
                 "executed": False,
                 "signature_count": 0,
                 "signatures": set(),
-                "creator": self.web3_manager.accounts.get('treasury', 'unknown'),
+                "creator": self.web3_manager.accounts.get(creator_role or 'treasury', 'unknown'),
+                "creator_role": creator_role,
                 "created_at": datetime.now().isoformat(),
                 "contract_address": self.config["address"]
             }
             
             self.proposals[proposal_id] = proposal
             
-            logger.info(f"📝 MultiSig提案创建: ID-{proposal_id}, Target-{target}, Amount-{amount} ETH")
+            logger.info(f"📝 MultiSig提案创建: ID-{proposal_id}, Target-{target}, Amount-{amount} ETH, Creator-{creator_role}")
             
             return {
                 "success": True,
@@ -89,6 +95,7 @@ class MultiSigContract:
                 "amount_wei": amount_wei,
                 "contract_address": self.config["address"],
                 "required_signatures": self.config["threshold"],
+                "creator_role": creator_role,
                 "message": f"Proposal {proposal_id} created successfully"
             }
             
@@ -100,8 +107,12 @@ class MultiSigContract:
             }
     
     def sign_proposal(self, proposal_id: int, signer_role: str) -> Dict[str, Any]:
-        """签名多签名提案"""
+        """签名多签名提案 - 现在检查管理员角色权限"""
         try:
+            # 检查签名者角色权限
+            if not self.is_authorized_signer(signer_role):
+                raise ValueError(f"Role {signer_role} is not authorized to sign proposals")
+            
             proposal = self.proposals.get(proposal_id)
             if not proposal:
                 raise ValueError(f"Proposal {proposal_id} not found")
@@ -532,3 +543,43 @@ class MultiSigContract:
                 "success": False,
                 "error": str(e)
             }
+    
+    # ================================
+    # Role Authorization Methods
+    # ================================
+    
+    def is_authorized_creator(self, role: str) -> bool:
+        """检查角色是否有权限创建提案 (Operator或Manager)"""
+        return role in ["operator_0", "operator_1", "operator_2", "operator_3", "operator_4", 
+                       "manager_0", "manager_1", "manager_2"]
+    
+    def is_authorized_signer(self, role: str) -> bool:
+        """检查角色是否有权限签名提案 (仅Manager)"""
+        return role in ["manager_0", "manager_1", "manager_2"]
+    
+    def get_user_role(self, user_address: str) -> str:
+        """根据地址获取用户角色"""
+        # 反向查找角色
+        for role, address in self.web3_manager.accounts.items():
+            if address.lower() == user_address.lower():
+                if role in ["manager_0", "manager_1", "manager_2"]:
+                    return "MANAGER"
+                elif role.startswith("operator_"):
+                    return "OPERATOR"
+        return "NONE"
+    
+    def get_role_info(self, role: str) -> Dict[str, Any]:
+        """获取角色信息"""
+        address = self.web3_manager.accounts.get(role)
+        if not address:
+            return {"exists": False}
+        
+        return {
+            "exists": True,
+            "address": address,
+            "role": role,
+            "can_create_proposals": self.is_authorized_creator(role),
+            "can_sign_proposals": self.is_authorized_signer(role),
+            "is_manager": self.is_authorized_signer(role),
+            "is_operator": role.startswith("operator_")
+        }

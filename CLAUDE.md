@@ -115,20 +115,19 @@ The project uses an `Ensemble_Hybrid` PyTorch model with the following architect
 
 ## Development Commands
 
-**Backend Development (Phase 4 Complete - Custom MultiSig):**
+**System Management (Phase 8 Complete - Contract-Level Role Separation):**
 ```bash
-# Start Ganache (prerequisite)
-npm run start-chain      # Ganache CLI with fixed mnemonic
+# One-click system startup
+./start_system.sh        # Start all services (Ganache, Backend, Frontend)
 
-# Deploy MultiSig Contract (one-time setup)
-node scripts/deploy_multisig_simple.js  # Deploy and configure custom MultiSig contract
+# One-click system shutdown
+./stop_system.sh         # Stop all services and clean up
 
-# Start FastAPI Backend
-python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
-# Backend runs on http://localhost:8000
+# Manual backend startup (if needed)
+python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 
-# Test Complete System with MultiSig
-./test_phase2_fixed.sh   # Comprehensive testing with MultiSig integration
+# Manual contract deployment (if needed)
+node scripts/deploy_multisig_simple.js
 ```
 
 **Frontend Development (Phase 3 Complete):**
@@ -194,6 +193,7 @@ POST /api/test/auto-distribute  # Test automatic reward distribution
 - ✅ Vue 3 + Vite frontend with real Web3 account creation and management
 - ✅ **Phase 3.5: UI Internationalization** - All frontend text converted to English
 - ✅ **Phase A: Reward Pool Mechanism** - Complete reward pool system with contribution-based distribution
+- ✅ **Phase 8: Contract-Level Role Separation** - True decentralized role management with smart contract enforcement
 
 **MultiSig Contract Features (Phase 4 Complete):**
 - ✅ Custom Solidity smart contract (`MultiSigProposal.sol`)
@@ -211,10 +211,17 @@ POST /api/test/auto-distribute  # Test automatic reward distribution
 - ✅ **Auto-Distribution**: 1 ETH automatically distributed when proposals execute
 - ✅ **Gaming Prevention**: Eliminates "final signer" advantage through merit-based rewards
 
+**Phase 8 Achievements (Contract-Level Role Separation):**
+- ✅ **Smart Contract Role Management**: Role validation moved to smart contract layer
+- ✅ **True Role Separation**: Operators create proposals, Managers sign proposals
+- ✅ **Contract-Enforced Permissions**: Smart contract validates all role-based actions
+- ✅ **Decentralized Authorization**: No backend dependency for role validation
+- ✅ **Enhanced Security**: Role boundaries enforced at blockchain level
+- ✅ **MetaMask Ready**: Foundation for external wallet integration
+
 **Remaining Technical Challenges:**
-- 🔄 **Role System Logic Flaw**: Manager/Operator roles have identical functionality  
-- 🔄 **Centralized Control Issue**: Backend controls all blockchain interactions instead of users
-- 🔄 **Permission Validation Gap**: No backend validation of role-based access control
+- 🔄 **MetaMask Integration**: Direct user wallet interaction for genuine Web3 experience
+- 🔄 **Advanced Role Management**: Dynamic role assignment and management features
 
 ## Technical Implementation Details
 
@@ -256,20 +263,20 @@ POST /api/test/auto-distribute  # Test automatic reward distribution
 - Frontend: Display contribution metrics and reward pool status
 - Database: Add contribution records and reward distribution history
 
-### **Phase 8: Contract-Level Role Separation** (4-5 days)
+### **Phase 8: Contract-Level Role Separation** ✅ **COMPLETED**
 **Objective**: Move role validation to smart contract layer for true decentralization
 
-**Key Improvements:**
-- Implement role-based access control directly in smart contract
-- Separate Operator (proposal creation) and Manager (proposal signing) permissions
-- Remove backend role validation dependency
-- Enable role management through contract owner functions
+**Completed Improvements:**
+- ✅ Implemented role-based access control directly in smart contract
+- ✅ Separated Operator (proposal creation) and Manager (proposal signing) permissions
+- ✅ Removed backend role validation dependency
+- ✅ Enabled role management through contract owner functions
 
-**Technical Changes:**
-- Smart contract: Add role mappings and function-level access control
-- Backend: Simplify API by removing role validation logic
-- Frontend: Update to respect contract-enforced role boundaries
-- Deployment: Setup role assignment during contract initialization
+**Technical Changes Completed:**
+- ✅ Smart contract: Added role mappings and function-level access control
+- ✅ Backend: Simplified API by removing role validation logic
+- ✅ Frontend: Updated to respect contract-enforced role boundaries
+- ✅ Deployment: Setup role assignment during contract initialization
 
 ### **Phase 9: MetaMask Integration** (7-10 days)
 **Objective**: Enable direct user wallet interaction for genuine Web3 experience

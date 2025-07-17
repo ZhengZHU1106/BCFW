@@ -85,7 +85,7 @@
       <!-- 操作按钮 -->
       <div class="card-actions" v-if="showActions">
         <button 
-          v-if="proposal.status === 'pending' && currentRole === 'operator'"
+          v-if="proposal.status === 'pending' && currentRole.startsWith('operator_')"
           @click="withdrawProposal"
           class="btn btn-secondary"
           :disabled="withdrawing"
@@ -118,7 +118,7 @@ const props = defineProps({
   },
   currentRole: {
     type: String,
-    default: 'operator'
+    default: 'operator_0'
   }
 })
 
@@ -211,7 +211,9 @@ const showActions = computed(() => {
 
 // 方法
 const canSign = (managerIndex) => {
-  return props.currentRole === 'manager' && 
+  // 检查当前角色是否为对应的manager
+  const managerRole = `manager_${managerIndex}`
+  return props.currentRole === managerRole && 
          props.proposal.status === 'pending' && 
          !signers.value[managerIndex].signed
 }

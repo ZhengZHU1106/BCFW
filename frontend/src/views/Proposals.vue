@@ -65,7 +65,7 @@ import ProposalCard from '@/components/ProposalCard.vue'
 // Proposal data
 const proposals = ref([])
 const statusFilter = ref('all')
-const currentRole = ref('operator')
+const currentRole = ref('operator_0')
 
 // Timer
 let refreshTimer = null
@@ -130,7 +130,7 @@ const handleRoleChange = (event) => {
 // Lifecycle
 onMounted(() => {
   // Get current role
-  currentRole.value = localStorage.getItem('userRole') || 'operator'
+  currentRole.value = localStorage.getItem('userRole') || 'operator_0'
   
   // Listen for role changes
   window.addEventListener('roleChanged', handleRoleChange)

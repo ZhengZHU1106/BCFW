@@ -17,10 +17,17 @@ contract MultiSigProposal {
     event RewardPoolDeposit(address indexed depositor, uint256 amount, uint256 newBalance);
     event RewardDistributed(address indexed recipient, uint256 amount, uint256 remainingPool);
     event ContributionUpdated(address indexed manager, uint256 totalSignatures, uint256 avgResponseTime);
+    event RoleAssigned(address indexed user, Role indexed role);
+    event RoleRevoked(address indexed user, Role indexed oldRole);
 
+    // Role definitions
+    enum Role { NONE, OPERATOR, MANAGER }
+    
     // State variables
     mapping(address => bool) public isOwner;
+    mapping(address => Role) public userRoles;
     address[] public owners;
+    address[] public operators;
     uint256 public threshold;
     uint256 public proposalCount;
     
@@ -57,6 +64,21 @@ contract MultiSigProposal {
         _;
     }
     
+    modifier onlyOperator() {
+        require(userRoles[msg.sender] == Role.OPERATOR, "Not an operator");
+        _;
+    }
+    
+    modifier onlyManager() {
+        require(userRoles[msg.sender] == Role.MANAGER, "Not a manager");
+        _;
+    }
+    
+    modifier onlyOperatorOrManager() {
+        require(userRoles[msg.sender] == Role.OPERATOR || userRoles[msg.sender] == Role.MANAGER, "Not authorized");
+        _;
+    }
+    
     modifier proposalExists(uint256 proposalId) {
         require(proposalId < proposalCount, "Proposal does not exist");
         _;
@@ -69,7 +91,7 @@ contract MultiSigProposal {
     
     /**
      * @dev Constructor sets up the initial owners and threshold
-     * @param _owners List of initial owners
+     * @param _owners List of initial owners (will be assigned as managers)
      * @param _threshold Number of signatures required for execution
      */
     constructor(address[] memory _owners, uint256 _threshold) {
@@ -82,7 +104,9 @@ contract MultiSigProposal {
             
             isOwner[owner] = true;
             owners.push(owner);
+            userRoles[owner] = Role.MANAGER; // All initial owners are managers
             emit OwnerAdded(owner);
+            emit RoleAssigned(owner, Role.MANAGER);
         }
         
         threshold = _threshold;
@@ -100,7 +124,7 @@ contract MultiSigProposal {
         address target,
         uint256 amount,
         bytes memory data
-    ) external onlyOwner returns (uint256 proposalId) {
+    ) external onlyOperatorOrManager returns (uint256 proposalId) {
         require(target != address(0), "Invalid target");
         require(address(this).balance >= amount, "Insufficient contract balance");
         
@@ -122,12 +146,12 @@ contract MultiSigProposal {
     }
     
     /**
-     * @dev Sign a proposal
+     * @dev Sign a proposal (only managers can sign)
      * @param proposalId ID of the proposal to sign
      */
     function signProposal(uint256 proposalId) 
         external 
-        onlyOwner 
+        onlyManager 
         proposalExists(proposalId) 
         notExecuted(proposalId) 
     {
@@ -349,6 +373,97 @@ contract MultiSigProposal {
      */
     function getRewardPoolInfo() external view returns (uint256 balance, uint256 baseReward) {
         return (rewardPool, BASE_REWARD);
+    }
+    
+    /**
+     * @dev Assign a role to a user (only owner can call)
+     * @param user Address of the user
+     * @param role Role to assign
+     */
+    function assignRole(address user, Role role) external onlyOwner {
+        require(user != address(0), "Invalid user address");
+        
+        Role oldRole = userRoles[user];
+        userRoles[user] = role;
+        
+        // Update operators array if assigning/revoking operator role
+        if (role == Role.OPERATOR && oldRole != Role.OPERATOR) {
+            operators.push(user);
+        } else if (role != Role.OPERATOR && oldRole == Role.OPERATOR) {
+            // Remove from operators array
+            for (uint256 i = 0; i < operators.length; i++) {
+                if (operators[i] == user) {
+                    operators[i] = operators[operators.length - 1];
+                    operators.pop();
+                    break;
+                }
+            }
+        }
+        
+        emit RoleAssigned(user, role);
+        if (oldRole != Role.NONE) {
+            emit RoleRevoked(user, oldRole);
+        }
+    }
+    
+    /**
+     * @dev Revoke a user's role (only owner can call)
+     * @param user Address of the user
+     */
+    function revokeRole(address user) external onlyOwner {
+        require(user != address(0), "Invalid user address");
+        require(userRoles[user] != Role.NONE, "User has no role");
+        
+        Role oldRole = userRoles[user];
+        userRoles[user] = Role.NONE;
+        
+        // Remove from operators array if was an operator
+        if (oldRole == Role.OPERATOR) {
+            for (uint256 i = 0; i < operators.length; i++) {
+                if (operators[i] == user) {
+                    operators[i] = operators[operators.length - 1];
+                    operators.pop();
+                    break;
+                }
+            }
+        }
+        
+        emit RoleRevoked(user, oldRole);
+    }
+    
+    /**
+     * @dev Get user's role
+     * @param user Address of the user
+     * @return Role of the user
+     */
+    function getUserRole(address user) external view returns (Role) {
+        return userRoles[user];
+    }
+    
+    /**
+     * @dev Get all operators
+     * @return Array of operator addresses
+     */
+    function getOperators() external view returns (address[] memory) {
+        return operators;
+    }
+    
+    /**
+     * @dev Check if an address is an operator
+     * @param user Address to check
+     * @return Whether the address is an operator
+     */
+    function isOperator(address user) external view returns (bool) {
+        return userRoles[user] == Role.OPERATOR;
+    }
+    
+    /**
+     * @dev Check if an address is a manager
+     * @param user Address to check
+     * @return Whether the address is a manager
+     */
+    function isManager(address user) external view returns (bool) {
+        return userRoles[user] == Role.MANAGER;
     }
     
     /**
