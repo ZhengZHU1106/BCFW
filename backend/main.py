@@ -185,10 +185,22 @@ async def sign_proposal(proposal_id: int, manager_role: str, db: Session = Depen
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/proposals/create")
-async def create_manual_proposal(detection_id: int, action: str = "block", db: Session = Depends(get_db)):
+async def create_manual_proposal(
+    request: dict,
+    db: Session = Depends(get_db)
+):
     """创建手动提案（Operator操作）"""
     try:
-        result = proposal_service.create_manual_proposal(db, detection_id, action)
+        detection_id = request.get("detection_id")
+        action = request.get("action", "block")
+        operator_role = request.get("operator_role")
+        
+        if not detection_id:
+            raise ValueError("detection_id is required")
+        
+        result = proposal_service.create_manual_proposal(
+            db, detection_id, action, operator_role
+        )
         return {
             "success": True,
             "data": result,

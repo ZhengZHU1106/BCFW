@@ -164,7 +164,7 @@ const actionText = computed(() => {
     'monitor': 'Monitor',
     'alert': 'Alert'
   }
-  return mapping[props.proposal.action] || 'Process'
+  return mapping[props.proposal.action_type] || 'Process'
 })
 
 const requiredSignatures = computed(() => 2)
@@ -178,7 +178,8 @@ const progressPercentage = computed(() => {
 })
 
 const signers = computed(() => {
-  const signatures = props.proposal.signatures || []
+  // Use signed_by field from backend database
+  const signatures = props.proposal.signed_by || []
   return [
     {
       name: 'Manager 0',

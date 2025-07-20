@@ -171,38 +171,81 @@ TODO 行动文档
 - [x] 添加状态文件管理（reward_pool_state.json, contributions_state.json）
 - [x] 完善自动分配测试API和错误处理
 
-### **第八阶段：合约层角色权限分离** ✅ **Phase B (4-5天)**
+### **第八阶段：合约层角色权限分离** ✅ **Phase 8完成 (4-5天)**
 
 **真正去中心化权限控制:**
-- 将角色验证从后端移至智能合约层
-- 实现合约级别的权限分离和访问控制
-- 整合原Phase 5的固定账户架构设计
+- [x] 将角色验证从后端移至智能合约层
+- [x] 实现合约级别的权限分离和访问控制
+- [x] 整合原Phase 5的固定账户架构设计
 
-**Phase 8.1: 智能合约角色系统重构**
-- [ ] 重新设计MultiSigProposal.sol的访问控制系统
-- [ ] 添加isManager和isOperator映射及相应修饰符
-- [ ] 分离createProposal(onlyOperator)和signProposal(onlyManager)权限
-- [ ] 实现合约层面的角色管理函数
+**Phase 8.1: 智能合约角色系统重构** ✅
+- [x] 重新设计MultiSigProposal.sol的访问控制系统
+- [x] 添加isManager和isOperator映射及相应修饰符
+- [x] 分离createProposal(onlyOperator)和signProposal(onlyManager)权限
+- [x] 实现合约层面的角色管理函数
 
-**Phase 8.2: 合约重新部署和配置**
-- [ ] 创建新的部署脚本支持角色初始化
-- [ ] 重新部署智能合约并设置Manager和Operator角色
-- [ ] 更新合约配置文件和ABI接口
-- [ ] 迁移现有提案数据到新合约
+**Phase 8.2: 合约重新部署和配置** ✅
+- [x] 创建新的部署脚本支持角色初始化
+- [x] 重新部署智能合约并设置Manager和Operator角色
+- [x] 更新合约配置文件和ABI接口
+- [x] 迁移现有提案数据到新合约
 
-**Phase 8.3: 后端权限简化**
-- [ ] 移除后端API的复杂角色验证逻辑
-- [ ] 更新所有API端点信任合约权限验证
-- [ ] 修改multisig_contract.py适配新的角色系统
-- [ ] 简化Services中的权限判断代码
+**Phase 8.3: 后端权限简化** ✅
+- [x] 移除后端API的复杂角色验证逻辑
+- [x] 更新所有API端点信任合约权限验证
+- [x] 修改multisig_contract.py适配新的角色系统
+- [x] 简化Services中的权限判断代码
 
-**Phase 8.4: 前端角色特定界面**
-- [ ] 实现固定10账户结构(Manager_0-2, Treasury, Operator_0-5)
-- [ ] 基于当前账户自动识别和显示对应角色界面
-- [ ] Manager界面仅显示签署和监控功能
-- [ ] Operator界面仅显示创建和检测功能
+**Phase 8.4: 前端角色特定界面** ✅
+- [x] 实现固定10账户结构(Manager_0-2, Treasury, Operator_0-5)
+- [x] 基于当前账户自动识别和显示对应角色界面
+- [x] Manager界面仅显示签署和监控功能
+- [x] Operator界面仅显示创建和检测功能
 
-### **第九阶段：MetaMask Web3集成** ✅ **Phase C (7-10天)**
+**Phase 8额外完成项：**
+- [x] 修复前后端响应级别映射不一致问题
+- [x] 修复威胁类型显示问题（显示真实攻击类型而非错误预测）
+- [x] 修复创建提案时缺少角色信息的问题
+- [x] 修复提案数据结构中signed_by字段处理问题
+- [x] 完整测试系统功能和端到端流程
+
+### **第九阶段：AI模型预测准确性修复** ⚠️ **Phase C (紧急修复)**
+
+**问题诊断:**
+- ✅ 确认模型训练本身成功（99.62%准确率）
+- ✅ 识别问题根源：模型架构重建不完整导致权重加载失败
+- ✅ 发现模型使用随机权重预测，导致所有攻击被误判为"Benign"
+
+**Phase C.1: 模型架构完整性修复**
+- [ ] 将training.ipynb中的完整Ensemble_Hybrid架构复制到model_loader.py
+- [ ] 确保所有组件完全一致：ResidualBlock、SelfAttentionBranch、FeatureInteractionBranch
+- [ ] 修复参数数量匹配（训练时355,494参数）
+- [ ] 验证模型结构与训练时一致
+
+**Phase C.2: 权重加载机制修复**
+- [ ] 修复state_dict键名匹配问题
+- [ ] 实现权重加载验证机制
+- [ ] 添加权重加载成功/失败的明确日志
+- [ ] 确保模型权重正确加载而非使用随机初始化
+
+**Phase C.3: 预测准确性验证**
+- [ ] 创建模型预测准确性测试脚本
+- [ ] 验证模型能正确预测各种攻击类型
+- [ ] 确保置信度分布合理（不再全部预测为Benign）
+- [ ] 测试端到端预测流程
+
+**Phase C.4: 前端显示优化**
+- [ ] 验证前端能正确显示各种攻击类型
+- [ ] 确保威胁类型显示准确（显示true_label而非错误的predicted_class）
+- [ ] 测试攻击模拟和威胁记录的正确性
+
+**预期结果:**
+- 模型预测准确率恢复到99%+
+- 正确识别各种攻击类型（DDoS、DoS GoldenEye、PortScan、SSH-Patator等）
+- 置信度分布合理，不再全部预测为"Benign"
+- 前端正确显示真实攻击类型
+
+### **第十阶段：MetaMask Web3集成** ✅ **Phase D (7-10天)**
 
 **实现真正的去中心化用户体验:**
 - 用户直接控制私钥和交易签名

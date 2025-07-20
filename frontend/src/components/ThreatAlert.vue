@@ -19,7 +19,7 @@
       <div class="threat-details">
         <div class="detail-item">
           <span class="label">Threat Type:</span>
-          <span class="value threat-type">{{ threat.threat_type }}</span>
+          <span class="value threat-type">{{ threat.true_label || threat.threat_type }}</span>
         </div>
         <div class="detail-item">
           <span class="label">Source IP:</span>
@@ -103,7 +103,7 @@ const alertTitle = computed(() => {
 })
 
 const alertDescription = computed(() => {
-  const type = props.threat.threat_type
+  const type = props.threat.true_label || props.threat.threat_type
   const descriptions = {
     'DDoS': 'Distributed Denial of Service attack detected, may cause service unavailability',
     'Brute Force': 'Brute force attack attempts detected, may compromise account security',

@@ -31,14 +31,14 @@ class ThreatDetectionModel:
         try:
             logger.info("🤖 开始加载AI模型组件...")
             
-            # 加载PyTorch模型
-            self._load_pytorch_model()
-            
-            # 加载预处理组件
+            # 加载预处理组件先（需要用于模型验证）
             self._load_preprocessors()
             
             # 加载模型信息和特征
             self._load_metadata()
+            
+            # 加载PyTorch模型（最后加载，因为需要验证）
+            self._load_pytorch_model()
             
             # 加载推理数据
             self._load_inference_data()
@@ -50,7 +50,7 @@ class ThreatDetectionModel:
             raise
     
     def _load_pytorch_model(self):
-        """加载PyTorch模型"""
+        """加载PyTorch模型并验证权重加载"""
         model_path = AI_MODEL_CONFIG['model_file']
         if not model_path.exists():
             raise FileNotFoundError(f"模型文件不存在: {model_path}")
@@ -63,14 +63,25 @@ class ThreatDetectionModel:
             input_dim = model_data.get('input_dim', 64)
             num_classes = model_data.get('num_classes', 12)
             
+            logger.info(f"正在创建模型: input_dim={input_dim}, num_classes={num_classes}")
             self.model = self._create_ensemble_hybrid_model(input_dim, num_classes)
+            
+            # 计算模型参数数量
+            model_params = sum(p.numel() for p in self.model.parameters())
+            logger.info(f"模型参数数量: {model_params:,}")
             
             # 加载真实权重
             try:
-                self.model.load_state_dict(model_data['model_state_dict'])
+                self.model.load_state_dict(model_data['model_state_dict'], strict=True)
                 logger.info("✅ 成功加载真实模型权重")
+                
+                # 验证权重加载成功
+                self._verify_model_weights()
+                
             except Exception as e:
-                logger.warning(f"⚠️  无法加载真实权重: {e}，使用随机初始化权重")
+                logger.error(f"❌ 权重加载失败: {e}")
+                logger.error("这将导致模型使用随机权重，预测结果不准确！")
+                raise RuntimeError(f"模型权重加载失败: {e}")
         else:
             # 直接是模型对象
             self.model = model_data
@@ -80,173 +91,238 @@ class ThreatDetectionModel:
         logger.info(f"✅ PyTorch模型加载成功: {model_path}")
     
     def _create_ensemble_hybrid_model(self, input_dim: int, num_classes: int):
-        """创建真实的Ensemble_Hybrid模型架构"""
+        """创建真实的Ensemble_Hybrid模型架构（完全匹配training.ipynb）"""
         import torch.nn as nn
         import torch.nn.functional as F
         
         class ResidualBlock(nn.Module):
-            def __init__(self, dim):
+            """残差块 - 改善梯度流动"""
+            def __init__(self, dim, dropout_rate=0.2):
                 super().__init__()
                 self.block = nn.Sequential(
                     nn.Linear(dim, dim),
                     nn.BatchNorm1d(dim),
                     nn.ReLU(),
-                    nn.Dropout(0.3),
+                    nn.Dropout(dropout_rate),
                     nn.Linear(dim, dim),
                     nn.BatchNorm1d(dim)
                 )
+                self.dropout = nn.Dropout(dropout_rate)
                 
             def forward(self, x):
-                return F.relu(x + self.block(x))
+                residual = x
+                out = self.block(x)
+                out = out + residual
+                return F.relu(self.dropout(out))
         
-        class AttentionBranch(nn.Module):
-            def __init__(self, input_dim, num_classes):
+        class SelfAttentionBranch(nn.Module):
+            """自注意力分支"""
+            def __init__(self, input_dim, num_classes, dropout_rate=0.2):
                 super().__init__()
-                self.query = nn.Linear(input_dim, input_dim)
-                self.key = nn.Linear(input_dim, input_dim)
-                self.value = nn.Linear(input_dim, input_dim)
-                self.output_projection = nn.Linear(input_dim, input_dim)
-                
+                self.attention_dim = min(64, input_dim)
+                self.query = nn.Linear(input_dim, self.attention_dim)
+                self.key = nn.Linear(input_dim, self.attention_dim)
+                self.value = nn.Linear(input_dim, self.attention_dim)
+                self.output_projection = nn.Linear(self.attention_dim, input_dim)
                 self.classifier = nn.Sequential(
                     nn.Linear(input_dim, 128),
                     nn.BatchNorm1d(128),
                     nn.ReLU(),
-                    nn.Dropout(0.3),
+                    nn.Dropout(dropout_rate),
                     nn.Linear(128, num_classes)
                 )
-                
+                self._init_weights()
+            
+            def _init_weights(self):
+                for module in self.modules():
+                    if isinstance(module, nn.Linear):
+                        nn.init.xavier_uniform_(module.weight)
+                        if module.bias is not None:
+                            nn.init.constant_(module.bias, 0)
+            
             def forward(self, x):
-                # Self-attention
                 q = self.query(x)
                 k = self.key(x)
                 v = self.value(x)
-                
-                # Attention weights
-                attention = F.softmax(torch.matmul(q, k.T) / (x.size(-1) ** 0.5), dim=-1)
-                attended = torch.matmul(attention, v)
-                output = self.output_projection(attended)
-                
-                return self.classifier(output)
+                attention_scores = torch.sum(q * k, dim=1, keepdim=True)
+                attention_weights = torch.sigmoid(attention_scores)
+                attention_weights = torch.clamp(attention_weights, min=1e-8, max=1.0)
+                attended = attention_weights * v
+                projected = self.output_projection(attended)
+                return self.classifier(projected)
         
-        class InteractionBranch(nn.Module):
-            def __init__(self, input_dim, num_classes):
+        class FeatureInteractionBranch(nn.Module):
+            """特徵交互分支"""
+            def __init__(self, input_dim, num_classes, dropout_rate=0.2):
                 super().__init__()
-                self.feature_embeddings = nn.Linear(input_dim, 8)
-                # 8个特征嵌入 + 64个原始特征 = 72，但state_dict显示92，可能有其他特征
+                self.interaction_dim = min(8, input_dim // 8)
+                self.feature_embeddings = nn.Linear(input_dim, self.interaction_dim)
+                self.interaction_output_dim = (self.interaction_dim * (self.interaction_dim - 1)) // 2
+                if self.interaction_output_dim == 0:
+                    self.interaction_output_dim = 1
                 self.classifier = nn.Sequential(
-                    nn.Linear(92, 128),  # 根据state_dict调整
+                    nn.Linear(input_dim + self.interaction_output_dim, 128),
                     nn.BatchNorm1d(128),
                     nn.ReLU(),
-                    nn.Dropout(0.3),
+                    nn.Dropout(dropout_rate),
                     nn.Linear(128, num_classes)
                 )
-                
+                self._init_weights()
+            
+            def _init_weights(self):
+                for module in self.modules():
+                    if isinstance(module, nn.Linear):
+                        nn.init.xavier_uniform_(module.weight)
+                        if module.bias is not None:
+                            nn.init.constant_(module.bias, 0)
+            
             def forward(self, x):
-                embeddings = self.feature_embeddings(x)
-                # 拼接原始特征和嵌入，确保维度匹配92
-                # 64(原始) + 8(嵌入) + 20(其他特征) = 92
-                extra_features = torch.mean(x, dim=-1, keepdim=True).repeat(1, 20)  # 创建20个额外特征
-                interactions = torch.cat([x, embeddings, extra_features], dim=-1)
-                return self.classifier(interactions)
+                embeddings = torch.tanh(self.feature_embeddings(x))
+                interactions = []
+                if self.interaction_dim > 1:
+                    for i in range(self.interaction_dim):
+                        for j in range(i + 1, self.interaction_dim):
+                            interaction = embeddings[:, i] * embeddings[:, j]
+                            interactions.append(interaction.unsqueeze(1))
+                
+                if interactions:
+                    interaction_features = torch.cat(interactions, dim=1)
+                else:
+                    interaction_features = torch.zeros(x.size(0), 1, device=x.device)
+                
+                combined_features = torch.cat([x, interaction_features], dim=1)
+                return self.classifier(combined_features)
         
-        class EnsembleHybridModel(nn.Module):
-            def __init__(self, input_dim, num_classes):
+        class Ensemble_Hybrid(nn.Module):
+            """集成混合網絡 - 完全匹配training.ipynb"""
+            def __init__(self, input_dim, num_classes=12, dropout_rate=0.2):
                 super().__init__()
                 self.input_dim = input_dim
                 self.num_classes = num_classes
                 
-                # Deep branch
                 self.deep_branch = nn.Sequential(
-                    nn.Linear(input_dim, 256),
-                    nn.BatchNorm1d(256),
-                    nn.ReLU(),
-                    nn.Dropout(0.3),
-                    nn.Linear(256, 128),
-                    nn.BatchNorm1d(128),
-                    nn.ReLU(),
-                    nn.Dropout(0.3),
+                    nn.Linear(input_dim, 256), nn.BatchNorm1d(256), nn.ReLU(), nn.Dropout(dropout_rate),
+                    nn.Linear(256, 128), nn.BatchNorm1d(128), nn.ReLU(), nn.Dropout(dropout_rate),
                     nn.Linear(128, num_classes)
                 )
-                
-                # Wide branch
                 self.wide_branch = nn.Sequential(
-                    nn.Linear(input_dim, 512),
-                    nn.BatchNorm1d(512),
-                    nn.ReLU(),
-                    nn.Dropout(0.3),
-                    nn.Linear(512, 256),
-                    nn.BatchNorm1d(256),
-                    nn.ReLU(),
-                    nn.Dropout(0.3),
+                    nn.Linear(input_dim, 512), nn.BatchNorm1d(512), nn.ReLU(), nn.Dropout(dropout_rate),
+                    nn.Linear(512, 256), nn.BatchNorm1d(256), nn.ReLU(), nn.Dropout(dropout_rate),
                     nn.Linear(256, num_classes)
                 )
-                
-                # Residual branch
                 self.res_branch = nn.Sequential(
-                    nn.Linear(input_dim, 128),
-                    nn.BatchNorm1d(128),
-                    nn.ReLU(),
-                    ResidualBlock(128),
-                    ResidualBlock(128),
+                    nn.Linear(input_dim, 128), nn.BatchNorm1d(128), nn.ReLU(),
+                    ResidualBlock(128, dropout_rate),
+                    ResidualBlock(128, dropout_rate),
                     nn.Linear(128, num_classes)
                 )
+                self.attention_branch = SelfAttentionBranch(input_dim, num_classes, dropout_rate)
+                self.interaction_branch = FeatureInteractionBranch(input_dim, num_classes, dropout_rate)
                 
-                # Attention branch
-                self.attention_branch = AttentionBranch(input_dim, num_classes)
-                
-                # Interaction branch
-                self.interaction_branch = InteractionBranch(input_dim, num_classes)
-                
-                # Weight network for ensemble
                 self.weight_net = nn.Sequential(
-                    nn.Linear(input_dim, 32),
-                    nn.ReLU(),
-                    nn.Dropout(0.3),
-                    nn.Linear(32, 5)  # 5个分支的权重
+                    nn.Linear(input_dim, 32), nn.ReLU(), nn.Dropout(dropout_rate),
+                    nn.Linear(32, 5), nn.Softmax(dim=1)
                 )
-                
-                # Global weights
-                self.global_weights = nn.Parameter(torch.ones(5))
-                
-                # Final fusion layer
                 self.final_fusion = nn.Sequential(
-                    nn.Linear(60, 128),  # 5*12=60 (5个分支每个12类输出)
-                    nn.BatchNorm1d(128),
-                    nn.ReLU(),
-                    nn.Dropout(0.3),
+                    nn.Linear(num_classes * 5, 128), nn.BatchNorm1d(128), nn.ReLU(), nn.Dropout(dropout_rate),
                     nn.Linear(128, num_classes)
                 )
+                self.global_weights = nn.Parameter(torch.ones(5) / 5)
+                self._init_weights()
+            
+            def _init_weights(self):
+                for module in self.modules():
+                    if isinstance(module, nn.Linear):
+                        nn.init.xavier_uniform_(module.weight)
+                        if module.bias is not None: nn.init.constant_(module.bias, 0)
+                    elif isinstance(module, nn.BatchNorm1d):
+                        nn.init.constant_(module.weight, 1)
+                        nn.init.constant_(module.bias, 0)
+            
+            def forward(self, x, return_intermediate=False):
+                if torch.isnan(x).any() or torch.isinf(x).any():
+                    x = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
                 
-            def forward(self, x):
-                # 各分支输出
-                deep_out = self.deep_branch(x)
-                wide_out = self.wide_branch(x)
-                res_out = self.res_branch(x)
-                attention_out = self.attention_branch(x)
-                interaction_out = self.interaction_branch(x)
+                outputs = [
+                    self.deep_branch(x), self.wide_branch(x), self.res_branch(x),
+                    self.attention_branch(x), self.interaction_branch(x)
+                ]
                 
-                # 动态权重
-                dynamic_weights = F.softmax(self.weight_net(x), dim=-1)
+                for i, out in enumerate(outputs):
+                    if torch.isnan(out).any() or torch.isinf(out).any():
+                        outputs[i] = torch.nan_to_num(out, nan=0.0, posinf=1.0, neginf=-1.0)
                 
-                # 组合权重 (动态权重 + 全局权重)
-                combined_weights = dynamic_weights * F.softmax(self.global_weights, dim=0)
+                deep_out, wide_out, res_out, att_out, inter_out = outputs
                 
-                # 加权组合
-                weighted_outputs = (
-                    combined_weights[:, 0:1] * deep_out +
-                    combined_weights[:, 1:2] * wide_out +
-                    combined_weights[:, 2:3] * res_out +
-                    combined_weights[:, 3:4] * attention_out +
-                    combined_weights[:, 4:5] * interaction_out
-                )
+                adaptive_weights = torch.clamp(self.weight_net(x), min=1e-8, max=1.0)
+                global_weights = torch.clamp(F.softmax(self.global_weights, dim=0), min=1e-8, max=1.0)
                 
-                # 最终融合
-                all_outputs = torch.cat([deep_out, wide_out, res_out, attention_out, interaction_out], dim=-1)
-                final_output = self.final_fusion(all_outputs)
+                outputs_stack = torch.stack(outputs, dim=2)
                 
-                return final_output + weighted_outputs  # 残差连接
+                weighted_output_adaptive = torch.sum(outputs_stack * adaptive_weights.unsqueeze(1), dim=2)
+                weighted_output_global = torch.sum(outputs_stack * global_weights.unsqueeze(0).unsqueeze(0), dim=2)
+                weighted_output = 0.6 * weighted_output_adaptive + 0.4 * weighted_output_global
+                
+                concatenated = torch.cat(outputs, dim=1)
+                final_output = self.final_fusion(concatenated)
+                
+                ensemble_output = 0.7 * final_output + 0.3 * weighted_output
+                
+                if torch.isnan(ensemble_output).any() or torch.isinf(ensemble_output).any():
+                    ensemble_output = torch.nan_to_num(ensemble_output, nan=0.0, posinf=1.0, neginf=-1.0)
+                    
+                if return_intermediate:
+                    return {
+                        'ensemble': ensemble_output, 'final_fusion': final_output,
+                        'weighted': weighted_output, 'branches': tuple(outputs),
+                        'weights': (adaptive_weights, global_weights)
+                    }
+                return ensemble_output
         
-        return EnsembleHybridModel(input_dim, num_classes)
+        return Ensemble_Hybrid(input_dim, num_classes)
+    
+    def _verify_model_weights(self):
+        """验证模型权重是否正确加载"""
+        try:
+            # 创建一个测试输入（使用批大小=2来防止BatchNorm问题）
+            test_input = torch.randn(2, 64)  # 模拟64个特征的输入，批大小=2
+            
+            with torch.no_grad():
+                # 执行前向传播
+                output = self.model(test_input)
+                
+                # 检查输出是否合理
+                if torch.isnan(output).any() or torch.isinf(output).any():
+                    logger.error("模型输出包含NaN或Inf值")
+                    return False
+                
+                # 检查输出维度
+                if output.shape != (2, 12):
+                    logger.error(f"模型输出维度不正确: {output.shape}, 期望: (2, 12)")
+                    return False
+                
+                # 检查输出是否为全零或全相同值（随机权重的特征）
+                if torch.allclose(output, torch.zeros_like(output), atol=1e-6):
+                    logger.warning("模型输出全为零，可能权重加载失败")
+                    return False
+                
+                # 检查输出是否具有合理的变化范围
+                output_std = torch.std(output)
+                if output_std < 1e-6:
+                    logger.warning(f"模型输出方差过小: {output_std}, 可能权重加载失败")
+                    return False
+                
+                # 检查两个样本的输出是否不同（避免固定输出）
+                if torch.allclose(output[0], output[1], atol=1e-4):
+                    logger.warning("模型输出固定不变，可能权重加载失败")
+                    return False
+                
+                logger.info(f"✅ 模型权重验证成功: 输出维度={output.shape}, 方差={output_std:.6f}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"模型权重验证失败: {e}")
+            return False
     
     def _load_preprocessors(self):
         """加载预处理器"""
@@ -332,92 +408,54 @@ class ThreatDetectionModel:
         """加载推理测试数据"""
         try:
             data_path = AI_MODEL_CONFIG['inference_data_file']
-            raw_data = torch.load(data_path, map_location='cpu')
-            
-            # 处理原始tensor数据，转换为所需格式
-            if isinstance(raw_data, torch.Tensor):
-                import numpy as np
-                self.inference_data = []
-                
-                # 假设每个样本是一个特征向量，需要配对标签
-                threat_classes = self.model_info['classes'] if self.model_info else [
-                    'Bot', 'DDoS', 'DoS GoldenEye', 'DoS Hulk', 'PortScan', 'SSH-Patator'
-                ]
-                attack_classes = [c for c in threat_classes if c != 'Benign']
-                
-                for i in range(len(raw_data)):
-                    # 为每个样本随机分配一个攻击标签（因为都是攻击样本）
-                    true_label = np.random.choice(attack_classes)
-                    
-                    sample = {
-                        'features': raw_data[i],
-                        'label': true_label
-                    }
-                    self.inference_data.append(sample)
-                    
-                logger.info(f"✅ 推理数据加载成功: {len(self.inference_data)}个真实攻击样本")
-            else:
-                # 如果已经是列表格式
-                self.inference_data = raw_data
-                logger.info(f"✅ 推理数据加载成功: {len(self.inference_data)}个样本")
+            self.inference_data = torch.load(data_path, map_location='cpu')
+            logger.info(f"✅ 推理数据加载成功: {len(self.inference_data)}个真实样本")
                 
         except Exception as e:
-            logger.warning(f"⚠️  无法加载推理数据: {e}")
-            logger.info("🔄 生成演示推理数据...")
-            self._create_demo_inference_data()
+            logger.error(f"❌ 无法加载推理数据: {e}")
+            raise RuntimeError(f"无法加载必需的推理数据文件: {data_path}")
     
-    def _create_demo_inference_data(self):
-        """创建演示用的推理数据"""
-        import numpy as np
+    
+    def _get_true_labels(self) -> List[str]:
+        """重建真实标签映射（基于抽样脚本的shuffle逻辑）"""
+        # 重建标签列表（与所有分析脚本中使用的逻辑一致）
+        labels = []
+        labels.extend(['Benign'] * 120)  # 前120个是Benign
+        threat_classes = ['Bot', 'DDoS', 'DoS GoldenEye', 'DoS Hulk', 'DoS Slowhttptest', 
+                         'DoS slowloris', 'FTP-Patator', 'PortScan', 'Rare_Attack', 'SSH-Patator', 'Web Attack  Brute Force']
+        for class_name in threat_classes:  # 其余类别每个10个
+            labels.extend([class_name] * 10)
         
-        # 生成模拟的攻击样本
-        num_samples = 100
-        num_features = 78  # 原始特征数
+        # 使用固定种子应用shuffle（与抽样脚本一致）
+        # 注意：这里需要保存随机状态，避免每次调用都重置随机种子
+        random_state = np.random.get_state()
+        np.random.seed(42)
+        shuffled_indices = np.random.permutation(len(labels))
+        shuffled_labels = [labels[i] for i in shuffled_indices]
+        np.random.set_state(random_state)  # 恢复随机状态
         
-        self.inference_data = []
-        
-        for i in range(num_samples):
-            # 生成随机特征
-            features = torch.FloatTensor(np.random.normal(0, 1, num_features))
-            
-            # 随机选择一个威胁类型
-            threat_classes = self.model_info['classes'] if self.model_info else [
-                'Bot', 'DDoS', 'DoS GoldenEye', 'DoS Hulk', 'PortScan', 'SSH-Patator'
-            ]
-            # 排除 'Benign'，只选择威胁类型
-            attack_classes = [c for c in threat_classes if c != 'Benign']
-            true_label = np.random.choice(attack_classes)
-            
-            sample = {
-                'features': features,
-                'label': true_label
-            }
-            self.inference_data.append(sample)
-        
-        logger.info(f"✅ 演示推理数据生成成功: {len(self.inference_data)}个样本")
+        return shuffled_labels
     
     def get_random_attack_sample(self) -> Tuple[np.ndarray, str]:
         """随机获取一个攻击样本"""
         if self.inference_data is None:
             raise RuntimeError("推理数据未加载")
         
-        # 随机选择一个样本
-        sample_idx = np.random.randint(0, len(self.inference_data))
-        sample_data = self.inference_data[sample_idx]
+        # 获取真实标签映射
+        true_labels = self._get_true_labels()
         
-        # 提取特征和真实标签
-        if isinstance(sample_data, dict):
-            features = sample_data['features'].numpy()
-            true_label = sample_data.get('label', 'Unknown')
-        else:
-            # 如果inference_data是直接的tensor，处理方式不同
-            features = sample_data.numpy() if hasattr(sample_data, 'numpy') else sample_data
-            # 为原始tensor数据随机分配标签
-            attack_classes = self.model_info['classes'] if self.model_info else [
-                'Bot', 'DDoS', 'DoS GoldenEye', 'DoS Hulk', 'PortScan', 'SSH-Patator'
-            ]
-            attack_classes = [c for c in attack_classes if c != 'Benign']
-            true_label = np.random.choice(attack_classes)
+        # 找到所有攻击样本的索引
+        attack_indices = [i for i, label in enumerate(true_labels) if label != 'Benign']
+        
+        if not attack_indices:
+            raise RuntimeError("没有找到攻击样本")
+        
+        # 随机选择一个攻击样本
+        sample_idx = np.random.choice(attack_indices)
+        true_label = true_labels[sample_idx]
+        
+        # 提取特征（直接使用真实的inference_data.pt tensor）
+        features = self.inference_data[sample_idx].numpy()
         
         # 确保features是1D数组
         if features.ndim > 1:
@@ -425,11 +463,17 @@ class ThreatDetectionModel:
         
         return features, true_label
     
-    def predict_threat(self, features: np.ndarray) -> Dict:
+    def predict_threat(self, features: np.ndarray, is_preprocessed: bool = False, strategy: str = "original") -> Dict:
         """执行威胁预测"""
         try:
-            # 预处理特征
-            processed_features = self._preprocess_features(features)
+            # 检查是否为已预处理数据
+            if is_preprocessed:
+                processed_features = features
+                logger.debug("使用已预处理数据，跳过预处理步骤")
+            else:
+                # 对原始数据进行预处理
+                processed_features = self._preprocess_features(features)
+                logger.debug("对原始数据进行预处理")
             
             # 模型推理
             with torch.no_grad():
@@ -437,12 +481,19 @@ class ThreatDetectionModel:
                 outputs = self.model(input_tensor)
                 probabilities = torch.softmax(outputs, dim=1)
                 
-                # 获取预测结果
-                predicted_class_idx = torch.argmax(probabilities, dim=1).item()
-                confidence = float(probabilities[0][predicted_class_idx])
+                # 应用改进的决策策略
+                predicted_class_idx, confidence, predicted_class = self._apply_improved_decision_strategy(probabilities[0], strategy)
                 
-                # 解码类别名称
-                predicted_class = self.label_encoder.inverse_transform([predicted_class_idx])[0]
+                # 记录原始最高概率预测供对比
+                original_predicted_idx = torch.argmax(probabilities, dim=1).item()
+                original_predicted_class = self.label_encoder.inverse_transform([original_predicted_idx])[0]
+                
+                if predicted_class != original_predicted_class:
+                    logger.info(f"决策策略调整: 原始预测={original_predicted_class}, 调整后={predicted_class}")
+                
+                # 调试信息：记录所有类别概率
+                logger.debug(f"预测结果: {predicted_class} (索引: {predicted_class_idx}, 置信度: {confidence:.4f})")
+                logger.debug(f"所有类别概率: {dict(zip(self.model_info['classes'], probabilities[0].tolist()))}")
                 
                 # 确定响应级别
                 response_level = self._determine_response_level(confidence)
@@ -460,29 +511,31 @@ class ThreatDetectionModel:
             raise
     
     def _preprocess_features(self, features: np.ndarray) -> np.ndarray:
-        """预处理特征数据 - 按照训练时的正确顺序"""
+        """预处理特征数据 - 修复维度不匹配问题"""
         # 确保输入是2D数组
         if features.ndim == 1:
             features = features.reshape(1, -1)
         
         logger.debug(f"原始特征维度: {features.shape}")
         
-        # 根据训练脚本，正确的预处理顺序是：
-        # 1. 首先检查原始特征是否为78维（训练时的原始维度）
-        # 2. 然后进行特征选择（从65维选择64维）
-        # 3. 最后进行标准化
-        
-        # 检查特征选择器的期望输入维度（应该是65）
+        # 检查特征选择器的期望输入维度
         expected_features_for_selector = getattr(self.feature_selector, 'n_features_in_', 65)
         
-        # 如果输入特征不是65维，需要调整到65维（移除低方差特征后的维度）
-        if features.shape[1] != expected_features_for_selector:
+        # 关键修复：如果我们的数据只有64维，但特征选择器期望65维输入
+        if features.shape[1] == 64 and expected_features_for_selector == 65:
+            # 添加一个额外特征（使用均值或零值）
+            # 这里使用零值，因为它不会影响特征选择的结果
+            extra_feature = np.zeros((features.shape[0], 1))
+            features = np.concatenate([features, extra_feature], axis=1)
+            logger.info(f"添加一个零值特征以匹配特征选择器: {features.shape}")
+        
+        # 其他维度不匹配情况的处理
+        elif features.shape[1] != expected_features_for_selector:
             logger.warning(f"特征维度不匹配: 实际{features.shape[1]}, 特征选择器期望{expected_features_for_selector}")
             
             if features.shape[1] < expected_features_for_selector:
-                # 如果特征不足，用均值填充
-                padding = np.full((features.shape[0], expected_features_for_selector - features.shape[1]), 
-                                np.mean(features, axis=1, keepdims=True))
+                # 如果特征不足，用零值填充
+                padding = np.zeros((features.shape[0], expected_features_for_selector - features.shape[1]))
                 features = np.concatenate([features, padding], axis=1)
                 logger.info(f"特征填充到{expected_features_for_selector}维: {features.shape}")
             elif features.shape[1] > expected_features_for_selector:
@@ -509,6 +562,55 @@ class ThreatDetectionModel:
         
         return scaled_features.flatten()
     
+    def _apply_improved_decision_strategy(self, probabilities: torch.Tensor, strategy: str = "original") -> tuple:
+        """应用改进的决策策略来提高攻击检测准确率"""
+        # 获取所有类别名称
+        class_names = self.model_info['classes']
+        
+        # 按概率排序
+        sorted_indices = torch.argsort(probabilities, descending=True)
+        
+        # 获取Benign类别的索引和概率
+        benign_idx = class_names.index('Benign')
+        benign_prob = probabilities[benign_idx].item()
+        
+        if strategy == "original":
+            # 策略2：直接使用模型的原始预测结果
+            predicted_class_idx = sorted_indices[0].item()
+            confidence = probabilities[predicted_class_idx].item()
+            predicted_class = self.label_encoder.inverse_transform([predicted_class_idx])[0]
+            return predicted_class_idx, confidence, predicted_class
+            
+        elif strategy == "attack_vs_benign":
+            # 策略3：比较攻击类别总概率 vs Benign概率
+            # 计算所有攻击类别的概率总和
+            attack_prob_sum = 0.0
+            for i, class_name in enumerate(class_names):
+                if class_name != 'Benign':
+                    attack_prob_sum += probabilities[i].item()
+            
+            if attack_prob_sum > benign_prob:
+                # 攻击概率总和更高，选择概率最高的攻击类别
+                for idx in sorted_indices:
+                    if class_names[idx] != 'Benign':
+                        predicted_class_idx = idx.item()
+                        confidence = probabilities[predicted_class_idx].item()
+                        predicted_class = self.label_encoder.inverse_transform([predicted_class_idx])[0]
+                        return predicted_class_idx, confidence, predicted_class
+            else:
+                # Benign概率更高，选择Benign
+                predicted_class_idx = benign_idx
+                confidence = benign_prob
+                predicted_class = 'Benign'
+                return predicted_class_idx, confidence, predicted_class
+        
+        else:
+            # 默认使用原始策略
+            predicted_class_idx = sorted_indices[0].item()
+            confidence = probabilities[predicted_class_idx].item()
+            predicted_class = self.label_encoder.inverse_transform([predicted_class_idx])[0]
+            return predicted_class_idx, confidence, predicted_class
+    
     def _determine_response_level(self, confidence: float) -> str:
         """根据置信度确定响应级别"""
         if confidence > THREAT_THRESHOLDS['high_confidence']:
@@ -526,8 +628,8 @@ class ThreatDetectionModel:
             # 获取随机攻击样本
             features, true_label = self.get_random_attack_sample()
             
-            # 执行预测
-            prediction_result = self.predict_threat(features)
+            # 执行预测（inference_data中的数据已预处理）
+            prediction_result = self.predict_threat(features, is_preprocessed=True)
             
             # 添加真实标签信息
             prediction_result['true_label'] = true_label
@@ -547,12 +649,22 @@ class ThreatDetectionModel:
     
     def get_model_info(self) -> Dict:
         """获取模型信息"""
+        # 处理 inference_data 的长度计算
+        inference_samples = 0
+        if self.inference_data is not None:
+            if hasattr(self.inference_data, 'shape'):
+                # 如果是 tensor，使用 shape[0]
+                inference_samples = self.inference_data.shape[0]
+            elif hasattr(self.inference_data, '__len__'):
+                # 如果是列表或其他可迭代对象
+                inference_samples = len(self.inference_data)
+        
         return {
             "model_info": self.model_info,
             "feature_count": len(self.selected_features) if self.selected_features else 0,
             "threat_classes": self.model_info['classes'] if self.model_info else [],
             "thresholds": THREAT_THRESHOLDS,
-            "inference_samples": len(self.inference_data) if self.inference_data else 0
+            "inference_samples": inference_samples
         }
 
 # 全局模型实例

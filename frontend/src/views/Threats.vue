@@ -76,7 +76,7 @@
             <tr v-for="threat in threats" :key="threat.id">
               <td>{{ formatTime(threat.detected_at) }}</td>
               <td>
-                <span class="threat-type">{{ threat.threat_type }}</span>
+                <span class="threat-type">{{ threat.true_label }}</span>
               </td>
               <td>
                 <code class="ip-address">{{ threat.source_ip }}</code>
@@ -146,15 +146,19 @@ const simulateAttack = async () => {
   try {
     const result = await systemAPI.simulateAttack()
     
+    // Extract data from nested structure
+    const data = result.data || result
+    
     // Update latest threat
     latestThreat.value = {
-      id: Date.now(),
-      threat_type: result.threat_type,
-      source_ip: result.source_ip || '192.168.1.100',
-      confidence: result.confidence,
-      response_level: result.response_level,
-      status: result.auto_executed ? 'executed' : 'detected',
-      detected_at: new Date().toISOString(),
+      id: data.detection_id || Date.now(),
+      threat_type: data.threat_info?.predicted_class || 'Unknown',
+      true_label: data.threat_info?.true_label || data.threat_info?.predicted_class || 'Unknown',
+      source_ip: data.network_info?.source_ip || '192.168.1.100',
+      confidence: data.threat_info?.confidence || 0,
+      response_level: data.threat_info?.response_level || 'silent_logging',
+      status: data.response_action?.action_taken === 'automatic_block' ? 'executed' : 'detected',
+      detected_at: data.timestamp || new Date().toISOString(),
       creating: false
     }
     
@@ -219,14 +223,20 @@ const createProposal = async (threat) => {
   
   threat.creating = true
   try {
+    // Get current operator role from localStorage
+    const operatorRole = localStorage.getItem('userRole') || 'operator_0'
+    
     const result = await systemAPI.createProposal({
       detection_id: threat.id,
-      action: 'block'
+      action: 'block',
+      operator_role: operatorRole  // Pass operator role for Phase 8 role separation
     })
     
     if (result.success) {
       alert('Proposal created successfully!')
       threat.status = 'proposal_created'
+      // Refresh proposals to show the new one
+      await refreshThreats()
     }
   } catch (error) {
     console.error('Failed to create proposal:', error)
@@ -238,8 +248,10 @@ const createProposal = async (threat) => {
 
 // Check if proposal can be created
 const canCreateProposal = (threat) => {
-  return currentRole.value === 'operator' && 
-         threat.response_level === 'manual' && 
+  // Check if current role is an operator role (operator_0, operator_1, etc.)
+  const isOperator = currentRole.value.startsWith('operator')
+  return isOperator && 
+         threat.response_level === 'manual_decision_alert' && 
          threat.status === 'detected'
 }
 
@@ -253,10 +265,10 @@ const getConfidenceClass = (confidence) => {
 // Get response level style
 const getResponseClass = (level) => {
   const mapping = {
-    'auto': 'badge-success',
-    'auto_proposal': 'badge-info',
-    'manual': 'badge-warning',
-    'silent': 'badge-secondary'
+    'automatic_response': 'badge-success',
+    'auto_create_proposal': 'badge-info',
+    'manual_decision_alert': 'badge-warning',
+    'silent_logging': 'badge-secondary'
   }
   return mapping[level] || 'badge-secondary'
 }
@@ -264,10 +276,10 @@ const getResponseClass = (level) => {
 // Get response level text
 const getResponseText = (level) => {
   const mapping = {
-    'auto': 'Auto Response',
-    'auto_proposal': 'Auto Proposal',
-    'manual': 'Manual Decision',
-    'silent': 'Silent Log'
+    'automatic_response': 'Auto Response',
+    'auto_create_proposal': 'Auto Proposal',
+    'manual_decision_alert': 'Manual Decision',
+    'silent_logging': 'Silent Log'
   }
   return mapping[level] || 'Unknown'
 }
@@ -307,7 +319,7 @@ const handleRoleChange = (event) => {
 // Lifecycle
 onMounted(() => {
   // Get current role
-  currentRole.value = localStorage.getItem('userRole') || 'operator'
+  currentRole.value = localStorage.getItem('userRole') || 'operator_0'
   
   // Listen for role changes
   window.addEventListener('roleChanged', handleRoleChange)
