@@ -55,4 +55,8 @@ junit.xml
 .nyc_output
 /test/test-ganache-connection.py
 /test/verify_setup.py
-/test_phase2_fixed.sh 
+/test_phase2_fixed.sh
+
+# Large data directories
+original_data/
+reference_implementations/ 

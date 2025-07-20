@@ -104,6 +104,9 @@ async def root():
             "simulate_attack": "/api/attack/simulate",
             "system_status": "/api/system/status",
             "proposals": "/api/proposals",
+            "network_topology": "/api/network/topology",
+            "node_details": "/api/network/nodes/{node_id}/details",
+            "attack_flow": "/api/network/simulate-attack-flow",
             "health": "/health"
         }
     }
@@ -416,6 +419,356 @@ async def test_auto_distribute():
         }
     except Exception as e:
         logger.error(f"自动分配测试失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# 网络可视化API
+@app.get("/api/network/topology")
+async def get_network_topology():
+    """获取网络拓扑信息"""
+    try:
+        from backend.config import NETWORK_CONFIG, GANACHE_CONFIG
+        
+        # 获取所有账户信息
+        accounts_info = system_service.web3_manager.get_all_accounts_info()
+        
+        # 转换为网络节点格式
+        nodes = []
+        for account in accounts_info:
+            role = account["role"]
+            node_type = "manager" if role.startswith("manager") else \
+                       "treasury" if role == "treasury" else "operator"
+            
+            nodes.append({
+                "id": role,
+                "address": account["address"],
+                "balance": account["balance_eth"],
+                "type": node_type,
+                "role": NETWORK_CONFIG["node_types"][node_type]["role"],
+                "color": NETWORK_CONFIG["node_types"][node_type]["color"],
+                "size": NETWORK_CONFIG["node_types"][node_type]["size"],
+                "status": "online" if account["balance_eth"] > 0 else "offline"
+            })
+        
+        return {
+            "success": True,
+            "data": {
+                "nodes": nodes,
+                "config": NETWORK_CONFIG,
+                "total_nodes": len(nodes)
+            },
+            "message": "网络拓扑获取成功"
+        }
+    except Exception as e:
+        logger.error(f"获取网络拓扑失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/network/nodes/{node_id}/details")
+async def get_node_details(node_id: str, db: Session = Depends(get_db)):
+    """获取节点详细信息"""
+    try:
+        # 验证节点ID
+        from backend.config import GANACHE_CONFIG
+        valid_nodes = list(GANACHE_CONFIG["accounts"].keys())
+        if node_id not in valid_nodes:
+            raise HTTPException(status_code=404, detail=f"节点不存在: {node_id}")
+        
+        # 获取账户基本信息
+        account_info = system_service.web3_manager.get_account_info(node_id)
+        
+        # 获取相关的提案信息（如果是Manager）
+        proposals_signed = []
+        if node_id.startswith("manager"):
+            from backend.database.models import Proposal
+            proposals = db.query(Proposal).all()
+            for proposal in proposals:
+                # 检查signed_by字段中是否包含当前manager的地址
+                if (proposal.signed_by and isinstance(proposal.signed_by, list) and 
+                    account_info["address"] in [signer.get("address") if isinstance(signer, dict) else signer 
+                                              for signer in proposal.signed_by]):
+                    proposals_signed.append({
+                        "id": proposal.id,
+                        "threat_type": proposal.threat_type,
+                        "created_at": proposal.created_at.isoformat(),
+                        "status": proposal.status
+                    })
+        
+        # 获取威胁检测记录（如果是Operator）
+        threat_detections = []
+        if node_id.startswith("operator"):
+            from backend.database.models import ThreatDetectionLog
+            detections = db.query(ThreatDetectionLog).limit(10).all()
+            threat_detections = [{
+                "id": detection.id,
+                "threat_type": detection.threat_type,
+                "confidence": detection.confidence,
+                "detected_at": detection.detected_at.isoformat()
+            } for detection in detections]
+        
+        return {
+            "success": True,
+            "data": {
+                "node_info": account_info,
+                "proposals_signed": proposals_signed,
+                "threat_detections": threat_detections,
+                "node_type": "manager" if node_id.startswith("manager") else 
+                           "treasury" if node_id == "treasury" else "operator"
+            },
+            "message": f"节点 {node_id} 详细信息获取成功"
+        }
+    except Exception as e:
+        logger.error(f"获取节点详细信息失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/network/simulate-attack-flow")
+async def simulate_attack_flow(request_data: dict, db: Session = Depends(get_db)):
+    """模拟攻击流程的可视化"""
+    try:
+        attack_type = request_data.get("attack_type", "random")
+        confidence = request_data.get("confidence", 0.85)
+        
+        # 执行攻击检测
+        attack_result = threat_service.simulate_attack(db)
+        
+        # 创建攻击流程步骤
+        flow_steps = [
+            {
+                "step": 1,
+                "action": "threat_detected",
+                "node": "operator_0",
+                "description": f"Threat Detected: {attack_result.get('threat_info', {}).get('predicted_class', 'Unknown')}",
+                "confidence": attack_result.get('threat_info', {}).get('confidence', 0.0),
+                "timestamp": attack_result.get('timestamp')
+            }
+        ]
+        
+        # 根据置信度决定后续步骤
+        confidence = attack_result.get('threat_info', {}).get('confidence', 0.0)
+        if confidence >= 0.80:
+            flow_steps.append({
+                "step": 2,
+                "action": "proposal_created",
+                "node": "manager_0",
+                "description": "Auto-Created Proposal",
+                "timestamp": attack_result.get('timestamp')
+            })
+            
+            flow_steps.append({
+                "step": 3,
+                "action": "awaiting_signatures",
+                "nodes": ["manager_1", "manager_2"],
+                "description": "Awaiting Manager Signatures",
+                "required_signatures": 2
+            })
+        
+        return {
+            "success": True,
+            "data": {
+                "attack_result": attack_result,
+                "flow_steps": flow_steps,
+                "total_steps": len(flow_steps)
+            },
+            "message": "攻击流程模拟成功"
+        }
+    except Exception as e:
+        logger.error(f"攻击流程模拟失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/network/nodes/available-indices")
+async def get_available_node_indices():
+    """获取可用的节点索引"""
+    try:
+        from backend.config import GANACHE_CONFIG
+        
+        # 获取当前已配置的账户索引
+        used_indices = set(GANACHE_CONFIG["accounts"].values())
+        
+        # 返回下一个可用的索引（Ganache通常支持更多账户）
+        max_accounts = 20  # Ganache可以支持更多账户
+        available_indices = []
+        
+        for i in range(max_accounts):
+            if i not in used_indices:
+                available_indices.append(i)
+        
+        return {
+            "success": True,
+            "data": {
+                "available_indices": available_indices[:10],  # 返回前10个可用索引
+                "next_manager_index": min([i for i in available_indices if i not in used_indices]),
+                "next_operator_index": min([i for i in available_indices if i not in used_indices]),
+                "max_accounts": max_accounts
+            },
+            "message": "可用索引获取成功"
+        }
+    except Exception as e:
+        logger.error(f"获取可用索引失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/network/nodes/create")
+async def create_network_node(request_data: dict):
+    """创建新的网络节点"""
+    try:
+        from backend.config import GANACHE_CONFIG
+        from eth_account import Account
+        
+        node_type = request_data.get("type")  # "manager" or "operator"
+        node_name = request_data.get("name", "")
+        
+        if node_type not in ["manager", "operator"]:
+            raise HTTPException(status_code=400, detail="节点类型必须是 'manager' 或 'operator'")
+        
+        # 启用HD钱包功能
+        Account.enable_unaudited_hdwallet_features()
+        
+        # 获取下一个可用的索引
+        used_indices = set(GANACHE_CONFIG["accounts"].values())
+        next_index = None
+        for i in range(20):  # 搜索前20个索引
+            if i not in used_indices:
+                next_index = i
+                break
+        
+        if next_index is None:
+            raise HTTPException(status_code=400, detail="没有可用的账户索引")
+        
+        # 生成新账户
+        mnemonic = GANACHE_CONFIG['mnemonic']
+        new_account = Account.from_mnemonic(
+            mnemonic, 
+            account_path=f"m/44'/60'/0'/0/{next_index}"
+        )
+        
+        # 创建节点ID
+        existing_nodes = [k for k in GANACHE_CONFIG["accounts"].keys() if k.startswith(node_type)]
+        node_count = len(existing_nodes)
+        node_id = f"{node_type}_{node_count}"
+        
+        # 如果提供了自定义名称，使用自定义名称
+        if node_name:
+            node_id = f"{node_type}_{node_name}"
+        
+        # 从Treasury转账激活新账户
+        web3_manager = system_service.web3_manager
+        treasury_info = web3_manager.get_account_info('treasury')
+        
+        if treasury_info['balance_eth'] < 100:
+            raise HTTPException(status_code=400, detail="Treasury余额不足，无法激活新账户")
+        
+        # 构建转账交易
+        nonce = web3_manager.w3.eth.get_transaction_count(treasury_info['address'])
+        transaction = {
+            'nonce': nonce,
+            'to': new_account.address,
+            'value': web3_manager.w3.to_wei(100, 'ether'),  # 转账100 ETH
+            'gas': 21000,
+            'gasPrice': web3_manager.w3.to_wei('1', 'gwei')
+        }
+        
+        # 签名并发送交易
+        treasury_private_key = web3_manager.private_keys['treasury']
+        signed_txn = web3_manager.w3.eth.account.sign_transaction(
+            transaction, 
+            private_key=treasury_private_key
+        )
+        tx_hash = web3_manager.w3.eth.send_raw_transaction(signed_txn.raw_transaction)
+        
+        # 等待交易确认
+        receipt = web3_manager.w3.eth.wait_for_transaction_receipt(tx_hash)
+        
+        # 更新配置（运行时添加，重启后需要手动持久化）
+        web3_manager.accounts[node_id] = new_account.address
+        web3_manager.private_keys[node_id] = new_account.key.hex()
+        
+        # 获取新账户余额确认
+        new_balance = web3_manager.w3.eth.get_balance(new_account.address)
+        
+        return {
+            "success": True,
+            "data": {
+                "node_id": node_id,
+                "node_type": node_type,
+                "address": new_account.address,
+                "private_key": new_account.key.hex(),  # 注意：生产环境中不应返回私钥
+                "balance": float(web3_manager.w3.from_wei(new_balance, 'ether')),
+                "transaction_hash": tx_hash.hex(),
+                "account_index": next_index
+            },
+            "message": f"节点 {node_id} 创建成功"
+        }
+    except Exception as e:
+        logger.error(f"节点创建失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/network/nodes/{node_id}/remove")
+async def remove_network_node(node_id: str):
+    """删除网络节点（将余额转回Treasury并停用）"""
+    try:
+        from backend.config import GANACHE_CONFIG
+        
+        # 检查节点是否存在
+        web3_manager = system_service.web3_manager
+        if node_id not in web3_manager.accounts:
+            raise HTTPException(status_code=404, detail=f"节点 {node_id} 不存在")
+        
+        # 检查是否为核心节点（不可删除）
+        core_nodes = ["treasury", "manager_0", "manager_1", "manager_2"]
+        if node_id in core_nodes:
+            raise HTTPException(status_code=400, detail=f"核心节点 {node_id} 不可删除")
+        
+        # 获取节点信息
+        node_info = web3_manager.get_account_info(node_id)
+        treasury_info = web3_manager.get_account_info('treasury')
+        
+        transfer_tx_hash = None
+        
+        # 如果节点有余额，转回Treasury
+        if node_info['balance_eth'] > 0.01:  # 保留少量gas费
+            # 计算转账金额（保留0.01 ETH作为gas费）
+            transfer_amount = node_info['balance_eth'] - 0.01
+            
+            # 构建转账交易
+            nonce = web3_manager.w3.eth.get_transaction_count(node_info['address'])
+            transaction = {
+                'nonce': nonce,
+                'to': treasury_info['address'],
+                'value': web3_manager.w3.to_wei(transfer_amount, 'ether'),
+                'gas': 21000,
+                'gasPrice': web3_manager.w3.to_wei('1', 'gwei')
+            }
+            
+            # 签名并发送交易
+            node_private_key = web3_manager.private_keys[node_id]
+            signed_txn = web3_manager.w3.eth.account.sign_transaction(
+                transaction, 
+                private_key=node_private_key
+            )
+            transfer_tx_hash = web3_manager.w3.eth.send_raw_transaction(signed_txn.raw_transaction)
+            
+            # 等待交易确认
+            receipt = web3_manager.w3.eth.wait_for_transaction_receipt(transfer_tx_hash)
+            transfer_tx_hash = transfer_tx_hash.hex()
+        
+        # 从运行时配置中移除节点
+        removed_address = web3_manager.accounts.pop(node_id, None)
+        removed_key = web3_manager.private_keys.pop(node_id, None)
+        
+        # 获取最终余额
+        final_balance = web3_manager.w3.eth.get_balance(removed_address or node_info['address'])
+        
+        return {
+            "success": True,
+            "data": {
+                "node_id": node_id,
+                "removed_address": removed_address,
+                "transfer_amount": transfer_amount if 'transfer_amount' in locals() else 0,
+                "transfer_tx_hash": transfer_tx_hash,
+                "final_balance": float(web3_manager.w3.from_wei(final_balance, 'ether')),
+                "treasury_address": treasury_info['address']
+            },
+            "message": f"节点 {node_id} 已停用，余额已转回Treasury"
+        }
+    except Exception as e:
+        logger.error(f"节点删除失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

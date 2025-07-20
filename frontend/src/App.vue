@@ -7,6 +7,7 @@
           <router-link to="/" class="nav-link">Dashboard</router-link>
           <router-link to="/threats" class="nav-link">Threats</router-link>
           <router-link to="/proposals" class="nav-link">Proposals</router-link>
+          <router-link to="/network" class="nav-link">Network</router-link>
           <router-link to="/history" class="nav-link">History</router-link>
         </div>
         <RoleSwitch />

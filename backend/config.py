@@ -19,10 +19,16 @@ GANACHE_CONFIG = {
     "rpc_url": "http://127.0.0.1:8545",
     "block_time": 5,
     "accounts": {
-        "manager_0": 0,  # Manager 账户索引
+        "manager_0": 0,   # Manager 账户索引
         "manager_1": 1,
         "manager_2": 2,
-        "treasury": 3,   # 系统金库账户索引
+        "treasury": 3,    # 系统金库账户索引
+        "operator_0": 4,  # Operator 账户索引
+        "operator_1": 5,
+        "operator_2": 6,
+        "operator_3": 7,
+        "operator_4": 8,
+        "operator_5": 9,
     }
 }
 
@@ -54,4 +60,16 @@ INCENTIVE_CONFIG = {
 DATABASE_CONFIG = {
     "url": f"sqlite:///{BACKEND_ROOT}/security_platform.db",
     "echo": False,  # 生产环境设为 False
+}
+
+# 网络可视化配置
+NETWORK_CONFIG = {
+    "node_types": {
+        "manager": {"color": "#007bff", "size": 40, "role": "Manager"},
+        "treasury": {"color": "#28a745", "size": 50, "role": "Treasury"}, 
+        "operator": {"color": "#fd7e14", "size": 35, "role": "Operator"}
+    },
+    "layout_types": ["star", "grid", "circle", "random"],
+    "default_layout": "star",
+    "animation_duration": 1000,  # 毫秒
 }
