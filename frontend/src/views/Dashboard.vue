@@ -318,8 +318,13 @@ const simulateAttack = async () => {
   
   isSimulating.value = true
   try {
-    const result = await systemAPI.simulateAttack()
-    alert(`Attack simulation successful!\nType: ${result.threat_type}\nConfidence: ${result.confidence.toFixed(2)}`)
+    const response = await systemAPI.simulateAttack()
+    if (response.success && response.data) {
+      const threatInfo = response.data.threat_info
+      alert(`Attack simulation successful!\nActual Type: ${threatInfo.true_label}\nConfidence: ${(threatInfo.confidence * 100).toFixed(1)}%\nModel Prediction: ${threatInfo.predicted_class}`)
+    } else {
+      throw new Error('Invalid response format')
+    }
   } catch (error) {
     console.error('Attack simulation failed:', error)
     alert('Attack simulation failed. Please check backend service.')

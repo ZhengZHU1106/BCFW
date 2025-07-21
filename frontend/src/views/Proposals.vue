@@ -99,8 +99,13 @@ const proposalStats = computed(() => {
 const refreshProposals = async () => {
   try {
     const result = await systemAPI.getProposals()
-    if (result.success) {
-      proposals.value = result.data
+    if (result.success && result.data) {
+      // Combine all proposals from different categories
+      proposals.value = [
+        ...(result.data.pending || []),
+        ...(result.data.approved || []),
+        ...(result.data.rejected || [])
+      ]
     }
   } catch (error) {
     console.error('Failed to refresh proposal list:', error)

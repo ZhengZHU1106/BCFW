@@ -7,7 +7,7 @@
   ],
   "threshold": 2,
   "deployer": "0xE11BA2b4D45Eaed5996Cd0823791E0C93114882d",
-  "deployedAt": "2025-07-20T10:20:44.752Z",
+  "deployedAt": "2025-07-21T04:11:13.906Z",
   "network": "ganache-local",
   "chainId": 1337,
   "gasUsed": 2100000

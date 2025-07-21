@@ -254,8 +254,13 @@ async def get_execution_logs(limit: int = 50, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/accounts/fund")
-async def fund_account(to_address: str, amount: float = 1.0):
+async def fund_account(request: dict):
     """从Treasury账户向新账户转账"""
+    to_address = request.get("to_address")
+    amount = request.get("amount", 1.0)
+    
+    if not to_address:
+        raise HTTPException(status_code=400, detail="缺少 to_address 参数")
     try:
         from backend.blockchain.web3_manager import get_web3_manager
         web3_manager = get_web3_manager()

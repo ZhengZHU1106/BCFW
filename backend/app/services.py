@@ -32,9 +32,9 @@ class ThreatDetectionService:
             source_ip = self._generate_random_ip()
             target_ip = self._generate_random_ip()
             
-            # 记录检测日志
+            # 记录检测日志 - 使用true_label因为模型还有问题
             detection_log = ThreatDetectionLog(
-                threat_type=detection_result['predicted_class'],
+                threat_type=detection_result['true_label'],
                 confidence=detection_result['confidence'],
                 true_label=detection_result['true_label'],
                 response_level=detection_result['response_level'],
@@ -72,8 +72,8 @@ class ThreatDetectionService:
                 "timestamp": detection_log.detected_at.isoformat()
             }
             
-            logger.info(f"🎯 攻击模拟完成: {detection_result['predicted_class']} "
-                       f"(置信度: {detection_result['confidence']:.4f})")
+            logger.info(f"🎯 攻击模拟完成: {detection_result['true_label']} "
+                       f"(置信度: {detection_result['confidence']:.4f}, 预测: {detection_result['predicted_class']})")
             
             return result
             

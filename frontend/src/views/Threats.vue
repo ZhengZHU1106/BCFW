@@ -149,11 +149,12 @@ const simulateAttack = async () => {
     // Extract data from nested structure
     const data = result.data || result
     
-    // Update latest threat
+    // Update latest threat - 使用true_label因为模型还有问题
     latestThreat.value = {
       id: data.detection_id || Date.now(),
-      threat_type: data.threat_info?.predicted_class || 'Unknown',
-      true_label: data.threat_info?.true_label || data.threat_info?.predicted_class || 'Unknown',
+      threat_type: data.threat_info?.true_label || 'Unknown',
+      true_label: data.threat_info?.true_label || 'Unknown',
+      predicted_class: data.threat_info?.predicted_class || 'Unknown',
       source_ip: data.network_info?.source_ip || '192.168.1.100',
       confidence: data.threat_info?.confidence || 0,
       response_level: data.threat_info?.response_level || 'silent_logging',
@@ -178,10 +179,13 @@ const refreshThreats = async () => {
   try {
     const result = await systemAPI.getDetectionLogs()
     if (result.success) {
-      threats.value = result.data.map(threat => ({
-        ...threat,
-        creating: false
-      }))
+      // Filter out Benign entries since this is a threats page
+      threats.value = result.data
+        .filter(threat => threat.threat_type !== 'Benign')
+        .map(threat => ({
+          ...threat,
+          creating: false
+        }))
       
       // Update statistics
       updateThreatStats()
