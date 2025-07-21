@@ -3,44 +3,42 @@ import apiClient from './client'
 export const systemAPI = {
   // 获取系统状态
   getStatus() {
-    return apiClient.get('/system/status')
+    return apiClient.get('/v1/system/status')
   },
 
   // 模拟攻击
   simulateAttack() {
-    return apiClient.post('/attack/simulate')
+    return apiClient.post('/v1/attack/simulate')
   },
 
   // 获取提案列表
   getProposals() {
-    return apiClient.get('/proposals')
+    return apiClient.get('/v1/proposals')
   },
 
   // 签署提案
-  signProposal(proposalId, managerIndex) {
-    return apiClient.post(`/proposals/${proposalId}/sign`, {
-      manager_index: managerIndex
-    })
+  signProposal(proposalId, managerRole) {
+    return apiClient.post(`/v1/proposals/${proposalId}/sign?manager_role=${managerRole}`)
   },
 
   // 手动创建提案
   createProposal(threatData) {
-    return apiClient.post('/proposals/create', threatData)
+    return apiClient.post('/v1/proposals/create', threatData)
   },
 
   // 获取威胁检测日志
   getDetectionLogs() {
-    return apiClient.get('/logs/detections')
+    return apiClient.get('/v1/logs/detections')
   },
 
   // 获取执行日志
   getExecutionLogs() {
-    return apiClient.get('/logs/executions')
+    return apiClient.get('/v1/logs/executions')
   },
 
   // 向账户转账
   fundAccount(toAddress, amount = 1.0) {
-    return apiClient.post('/accounts/fund', {
+    return apiClient.post('/v1/accounts/fund', {
       to_address: toAddress,
       amount: amount
     })
@@ -48,17 +46,17 @@ export const systemAPI = {
 
   // 奖金池管理
   getRewardPoolInfo() {
-    return apiClient.get('/reward-pool/info')
+    return apiClient.get('/v1/reward-pool/info')
   },
 
   getManagerContributions() {
-    return apiClient.get('/reward-pool/contributions')
+    return apiClient.get('/v1/reward-pool/contributions')
   },
 
   depositToRewardPool(fromRole, amount) {
-    return apiClient.post('/reward-pool/deposit', {
+    return apiClient.post('/v1/reward-pool/deposit', {
       from_role: fromRole,
-      amount: amount
+      amount_eth: amount
     })
   },
 

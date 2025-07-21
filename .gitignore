@@ -19,6 +19,7 @@ scaler.pkl
 selected_features.json
 
 # Node.js
+node_modules/
 frontend/node_modules/
 frontend/build/
 frontend/dist/
@@ -44,6 +45,10 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
+ganache.log
+backend.log
+frontend.log
+.*.pid
 
 # Test
 /cypress/videos/

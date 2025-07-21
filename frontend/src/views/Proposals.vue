@@ -115,7 +115,9 @@ const refreshProposals = async () => {
 // Handle proposal signing
 const handleSignProposal = async (proposalId, managerIndex) => {
   try {
-    const result = await systemAPI.signProposal(proposalId, managerIndex)
+    // Convert managerIndex to manager_role format
+    const managerRole = `manager_${managerIndex}`
+    const result = await systemAPI.signProposal(proposalId, managerRole)
     if (result.success) {
       // Refresh list
       await refreshProposals()

@@ -60,22 +60,22 @@
         <div class="pool-status-card card">
           <div class="card-header">
             <h4 class="card-title">Pool Status</h4>
-            <span class="pool-indicator" :class="rewardPoolInfo.success ? 'active' : 'inactive'">
-              {{ rewardPoolInfo.success ? 'Active' : 'Inactive' }}
+            <span class="pool-indicator" :class="rewardPoolInfo?.success ? 'active' : 'inactive'">
+              {{ rewardPoolInfo?.success ? 'Active' : 'Inactive' }}
             </span>
           </div>
           <div class="pool-stats">
             <div class="stat-item">
               <span class="stat-label">Pool Balance:</span>
-              <span class="stat-value">{{ formatBalance(rewardPoolInfo.balance) }} ETH</span>
+              <span class="stat-value">{{ formatBalance(rewardPoolInfo?.balance || 0) }} ETH</span>
             </div>
             <div class="stat-item">
               <span class="stat-label">Base Reward:</span>
-              <span class="stat-value">{{ formatBalance(rewardPoolInfo.base_reward) }} ETH</span>
+              <span class="stat-value">{{ formatBalance(rewardPoolInfo?.base_reward || 0.01) }} ETH</span>
             </div>
             <div class="stat-item">
               <span class="stat-label">Treasury Balance:</span>
-              <span class="stat-value">{{ formatBalance(rewardPoolInfo.treasury_balance) }} ETH</span>
+              <span class="stat-value">{{ formatBalance(rewardPoolInfo?.treasury_balance || 0) }} ETH</span>
             </div>
           </div>
         </div>
@@ -153,203 +153,100 @@
   </div>
 </template>
 
-<script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
-import { systemAPI } from '@/api/system'
+<script setup lang="ts">
+import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { useSystemStore } from '@/stores/systemStore'
+import { useUserStore } from '@/stores/userStore'
+import { useThreatStore } from '@/stores/threatStore'
 import AccountList from '@/components/AccountList.vue'
 
-// System status
-const isConnected = ref(false)
-const blockHeight = ref(0)
-const networkStatus = ref('Checking...')
-const lastUpdate = ref('-')
+// 使用 Pinia stores
+const systemStore = useSystemStore()
+const userStore = useUserStore()
+const threatStore = useThreatStore()
 
-// Account information
-const accounts = ref([])
+// 从 store 中获取响应式数据
+const isConnected = computed(() => systemStore.isConnected)
+const blockHeight = computed(() => systemStore.blockHeight)
+const networkStatus = computed(() => systemStore.networkStatus)
+const lastUpdate = computed(() => systemStore.lastUpdate)
+const accounts = computed(() => systemStore.accounts)
+const rewardPoolInfo = computed(() => systemStore.rewardPoolInfo || { success: false, balance: 0, base_reward: 0.01, treasury_balance: 0 })
+const managerContributions = computed(() => systemStore.managerContributions)
+const systemLoading = computed(() => systemStore.isLoading)
 
-// Attack simulation status
-const isSimulating = ref(false)
+const isSimulating = computed(() => threatStore.isSimulating)
+const canManageAccounts = computed(() => userStore.canManageAccounts)
 
-// Reward Pool Management
-const rewardPoolInfo = ref({
-  success: false,
-  balance: 0,
-  base_reward: 0.01,
-  treasury_balance: 0
-})
-const managerContributions = ref({})
+// 本地组件状态
 const depositAmount = ref(0.1)
 const isDepositing = ref(false)
 
 // Timer
-let statusTimer = null
+let statusTimer: number | null = null
 
-// 获取系统状态
-const fetchSystemStatus = async () => {
-  try {
-    console.log('Fetching system status...')
-    const result = await systemAPI.getStatus()
-    console.log('API Response:', result)
-    
-    // Backend response format: {success: true, data: {...}, message: "..."}
-    // API client has already extracted response.data, so result is the full response body
-    const status = result.data
-    
-    isConnected.value = status.network?.is_connected || false
-    blockHeight.value = status.network?.block_number || 0
-    networkStatus.value = status.network?.is_connected ? 'Running' : 'Connection Failed'
-    
-    // Update account information
-    if (status.accounts && Array.isArray(status.accounts)) {
-      const managerAccounts = status.accounts.filter(acc => acc.role.startsWith('manager'))
-      const treasuryAccount = status.accounts.find(acc => acc.role === 'treasury')
-      
-      accounts.value = [
-        {
-          name: 'Manager 0',
-          role: 'Manager',
-          type: 'info',
-          address: managerAccounts[0]?.address,
-          balance: managerAccounts[0]?.balance_eth
-        },
-        {
-          name: 'Manager 1',
-          role: 'Manager',
-          type: 'info',
-          address: managerAccounts[1]?.address,
-          balance: managerAccounts[1]?.balance_eth
-        },
-        {
-          name: 'Manager 2',
-          role: 'Manager',
-          type: 'info',
-          address: managerAccounts[2]?.address,
-          balance: managerAccounts[2]?.balance_eth
-        },
-        {
-          name: 'Treasury',
-          role: 'System Treasury',
-          type: 'warning',
-          address: treasuryAccount?.address,
-          balance: treasuryAccount?.balance_eth
-        }
-      ]
-    }
-    
-    lastUpdate.value = new Date().toLocaleTimeString('en-US')
-    
-    // Fetch reward pool info
-    await fetchRewardPoolInfo()
-    await fetchManagerContributions()
-    
-  } catch (error) {
-    console.error('Failed to fetch system status:', error)
-    console.error('Error details:', error.response?.data || error.message)
-    isConnected.value = false
-    networkStatus.value = 'Connection Error'
-  }
+// 使用 store 方法替代本地状态管理
+const refreshData = async () => {
+  await systemStore.initialize()
 }
 
-// Fetch reward pool information
-const fetchRewardPoolInfo = async () => {
-  try {
-    const result = await systemAPI.getRewardPoolInfo()
-    if (result.success) {
-      rewardPoolInfo.value = {
-        success: true,
-        balance: result.pool_info.balance || 0,
-        base_reward: result.pool_info.base_reward || 0.01,
-        treasury_balance: result.pool_info.treasury_balance || 0
-      }
-    } else {
-      rewardPoolInfo.value.success = false
-    }
-  } catch (error) {
-    console.error('Failed to fetch reward pool info:', error)
-    rewardPoolInfo.value.success = false
-  }
-}
-
-// Fetch manager contributions
-const fetchManagerContributions = async () => {
-  try {
-    const result = await systemAPI.getManagerContributions()
-    if (result.success) {
-      managerContributions.value = result.contributions || {}
-    }
-  } catch (error) {
-    console.error('Failed to fetch manager contributions:', error)
-    managerContributions.value = {}
-  }
-}
-
-// Refresh contributions manually
-const refreshContributions = async () => {
-  await fetchManagerContributions()
-}
-
-// Deposit to reward pool
+// Deposit to reward pool using store
 const depositToPool = async () => {
   if (isDepositing.value || !depositAmount.value) return
   
   isDepositing.value = true
   try {
-    const result = await systemAPI.depositToRewardPool('treasury', depositAmount.value)
-    if (result.success) {
-      alert(`Successfully deposited ${depositAmount.value} ETH to reward pool!`)
-      await fetchRewardPoolInfo()
-      depositAmount.value = 0.1 // Reset to default
-    } else {
-      alert(`Failed to deposit: ${result.error || 'Unknown error'}`)
-    }
+    await systemStore.depositToRewardPool('treasury', depositAmount.value)
+    alert(`Successfully deposited ${depositAmount.value} ETH to reward pool!`)
+    depositAmount.value = 0.1 // Reset to default
   } catch (error) {
-    console.error('Deposit failed:', error)
-    alert('Deposit failed. Please check backend service.')
+    alert(`Failed to deposit: ${error.message || 'Unknown error'}`)
   } finally {
     isDepositing.value = false
   }
 }
 
-// 手动分配功能已移除 - 现在使用自动分配机制
-
-// Simulate attack
+// Simulate attack using store
 const simulateAttack = async () => {
-  if (isSimulating.value) return
-  
-  isSimulating.value = true
   try {
-    const response = await systemAPI.simulateAttack()
-    if (response.success && response.data) {
-      const threatInfo = response.data.threat_info
-      alert(`Attack simulation successful!\nActual Type: ${threatInfo.true_label}\nConfidence: ${(threatInfo.confidence * 100).toFixed(1)}%\nModel Prediction: ${threatInfo.predicted_class}`)
-    } else {
-      throw new Error('Invalid response format')
-    }
+    const data = await threatStore.simulateAttack()
+    const threatInfo = data.threat_info
+    alert(`Attack simulation successful!\nActual Type: ${threatInfo.true_label}\nConfidence: ${(threatInfo.confidence * 100).toFixed(1)}%\nModel Prediction: ${threatInfo.predicted_class}`)
   } catch (error) {
-    console.error('Attack simulation failed:', error)
     alert('Attack simulation failed. Please check backend service.')
-  } finally {
-    isSimulating.value = false
   }
 }
 
-// Format address
-const formatAddress = (address) => {
+// 辅助函数
+const formatAddress = (address: string | undefined): string => {
   if (!address) return '-'
   return `${address.slice(0, 6)}...${address.slice(-4)}`
 }
 
-// Format balance
-const formatBalance = (balance) => {
+const formatBalance = (balance: number | null | undefined): string => {
   if (balance === null || balance === undefined) return '0.0000'
-  return parseFloat(balance).toFixed(4)
+  return parseFloat(balance.toString()).toFixed(4)
 }
 
+// 计算属性
+const poolBalance = computed(() => {
+  return rewardPoolInfo?.balance || 0
+})
+
+const totalDistributed = computed(() => {
+  return rewardPoolInfo?.total_distributed || 0
+})
+
 // Lifecycle
-onMounted(() => {
-  fetchSystemStatus()
-  // Update status every 5 seconds
-  statusTimer = setInterval(fetchSystemStatus, 5000)
+onMounted(async () => {
+  // 初始化用户角色
+  userStore.initializeFromStorage()
+  
+  // 初始化系统数据
+  await refreshData()
+  
+  // 设置定期刷新
+  statusTimer = setInterval(refreshData, 5000)
 })
 
 onUnmounted(() => {

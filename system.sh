@@ -208,7 +208,7 @@ check_status() {
     # Check Ganache
     if port_in_use 8545; then
         if curl -s http://127.0.0.1:8545 -X POST -H "Content-Type: application/json" \
-           -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' | grep -q "1337"; then
+           -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' | grep -q "0x539"; then
             echo "✅ Ganache blockchain: Running (Port 8545)"
         else
             echo "⚠️  Ganache blockchain: Port occupied but not responding correctly"
@@ -230,7 +230,7 @@ check_status() {
 
     # Check Frontend
     if port_in_use 5173; then
-        if curl -s http://localhost:5173 2>/dev/null | grep -q "vite"; then
+        if curl -s http://localhost:5173 2>/dev/null | grep -q -E "(vite|智能安防平台)"; then
             echo "✅ Frontend: Running (Port 5173)"
         else
             echo "⚠️  Frontend: Port occupied but not responding correctly"
