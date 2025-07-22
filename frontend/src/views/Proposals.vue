@@ -8,6 +8,7 @@
           <option value="pending">Pending</option>
           <option value="approved">Approved</option>
           <option value="rejected">Rejected</option>
+          <option value="withdrawn">Withdrawn</option>
         </select>
         <button @click="refreshProposals" class="btn btn-secondary">
           Refresh
@@ -33,6 +34,10 @@
         <div class="stat-card card">
           <div class="stat-value">{{ proposalStats.rejected }}</div>
           <div class="stat-label">Rejected</div>
+        </div>
+        <div class="stat-card card">
+          <div class="stat-value">{{ proposalStats.withdrawn }}</div>
+          <div class="stat-label">Withdrawn</div>
         </div>
       </div>
     </div>
@@ -83,13 +88,15 @@ const proposalStats = computed(() => {
     total: proposals.value.length,
     pending: 0,
     approved: 0,
-    rejected: 0
+    rejected: 0,
+    withdrawn: 0
   }
   
   proposals.value.forEach(proposal => {
     if (proposal.status === 'pending') stats.pending++
     else if (proposal.status === 'approved') stats.approved++
     else if (proposal.status === 'rejected') stats.rejected++
+    else if (proposal.status === 'withdrawn') stats.withdrawn++
   })
   
   return stats
@@ -100,12 +107,9 @@ const refreshProposals = async () => {
   try {
     const result = await systemAPI.getProposals()
     if (result.success && result.data) {
-      // Combine all proposals from different categories
-      proposals.value = [
-        ...(result.data.pending || []),
-        ...(result.data.approved || []),
-        ...(result.data.rejected || [])
-      ]
+      // Use history which contains all proposals (pending, approved, rejected)
+      // This fixes the issue where approved/rejected proposals weren't showing
+      proposals.value = result.data.history || []
     }
   } catch (error) {
     console.error('Failed to refresh proposal list:', error)

@@ -45,6 +45,8 @@ class Proposal(Base):
     created_at = Column(DateTime, default=func.now(), comment='创建时间')
     approved_at = Column(DateTime, comment='批准时间')
     executed_at = Column(DateTime, comment='执行时间')
+    withdrawn_at = Column(DateTime, comment='撤回时间')
+    withdrawn_by = Column(String(50), comment='撤回者角色')
     
     # 扩展数据
     detection_data = Column(JSON, comment='完整检测数据')
@@ -71,6 +73,8 @@ class Proposal(Base):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'approved_at': self.approved_at.isoformat() if self.approved_at else None,
             'executed_at': self.executed_at.isoformat() if self.executed_at else None,
+            'withdrawn_at': self.withdrawn_at.isoformat() if self.withdrawn_at else None,
+            'withdrawn_by': self.withdrawn_by,
             'detection_data': self.detection_data
         }
 

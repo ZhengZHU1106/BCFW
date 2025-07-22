@@ -409,6 +409,43 @@ class ProposalService:
         """获取提案历史"""
         proposals = db.query(Proposal).order_by(Proposal.created_at.desc()).limit(limit).all()
         return [proposal.to_dict() for proposal in proposals]
+    
+    def withdraw_proposal(self, db: Session, proposal_id: int, operator_role: str) -> Dict:
+        """撤回提案（仅Operator可撤回自己创建的pending提案）"""
+        try:
+            # 查找提案
+            proposal = db.query(Proposal).filter(Proposal.id == proposal_id).first()
+            if not proposal:
+                raise ValueError(f"Proposal not found: {proposal_id}")
+            
+            # 检查提案状态
+            if proposal.status != "pending":
+                raise ValueError(f"Cannot withdraw proposal with status: {proposal.status}")
+            
+            # 验证操作者角色
+            if not operator_role or not operator_role.startswith("operator_"):
+                raise ValueError("Only operators can withdraw proposals")
+            
+            # 更新提案状态
+            proposal.status = "withdrawn"
+            proposal.withdrawn_at = datetime.now()
+            proposal.withdrawn_by = operator_role
+            
+            db.commit()
+            
+            logger.info(f"📤 Proposal withdrawn: ID-{proposal_id} by {operator_role}")
+            
+            return {
+                "status": "withdrawn",
+                "message": "Proposal withdrawn successfully",
+                "proposal_id": proposal_id,
+                "withdrawn_by": operator_role
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to withdraw proposal: {e}")
+            db.rollback()
+            raise
 
 class SystemInfoService:
     """系统信息服务"""

@@ -146,23 +146,43 @@ stop_system_quiet() {
     kill_by_pid_file ".backend.pid" "Backend"
     kill_by_pid_file ".ganache.pid" "Ganache"
 
-    # Force kill any remaining processes
+    # Wait a bit for graceful shutdown
+    sleep 2
+
+    # Force kill any remaining processes - more aggressive approach
     processes_to_kill=("uvicorn" "vite" "ganache" "node.*ganache" "python.*uvicorn" "npm.*dev")
     for process in "${processes_to_kill[@]}"; do
         if pgrep -f "$process" > /dev/null; then
             pkill -f "$process" 2>/dev/null
-            sleep 1
+            sleep 2
             if pgrep -f "$process" > /dev/null; then
                 pkill -9 -f "$process" 2>/dev/null
             fi
         fi
     done
 
-    # Kill by port
+    # Kill by port - more thorough approach
     ports_to_free=(8545 8000 5173 3000 4000 5000 8080 8888)
     for port in "${ports_to_free[@]}"; do
+        # Use lsof to kill processes using specific ports
+        if command_exists lsof; then
+            # Get all PIDs using the port
+            local pids=$(lsof -ti:$port 2>/dev/null)
+            if [ ! -z "$pids" ]; then
+                echo "$pids" | xargs kill -9 2>/dev/null
+            fi
+        fi
+    done
+
+    # Additional wait for port release
+    sleep 3
+
+    # Verify critical ports are free
+    for port in 8545 8000 5173; do
         if command_exists lsof && lsof -ti:$port > /dev/null 2>&1; then
+            echo "⚠️  Warning: Port $port still in use, attempting final cleanup..."
             lsof -ti:$port | xargs kill -9 2>/dev/null
+            sleep 1
         fi
     done
 
@@ -207,8 +227,8 @@ check_status() {
 
     # Check Ganache
     if port_in_use 8545; then
-        if curl -s http://127.0.0.1:8545 -X POST -H "Content-Type: application/json" \
-           -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' | grep -q "1337"; then
+        if curl -s -m 5 http://127.0.0.1:8545 -X POST -H "Content-Type: application/json" \
+           -d '{"jsonrpc":"2.0","method":"net_version","params":[],"id":1}' 2>/dev/null | grep -q '"result"'; then
             echo "✅ Ganache blockchain: Running (Port 8545)"
         else
             echo "⚠️  Ganache blockchain: Port occupied but not responding correctly"

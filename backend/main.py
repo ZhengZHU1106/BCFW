@@ -2,6 +2,7 @@
 区块链智能安防平台 - FastAPI 主应用
 """
 import logging
+from datetime import datetime
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -213,6 +214,27 @@ async def create_manual_proposal(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"创建手动提案失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/proposals/{proposal_id}/withdraw")
+async def withdraw_proposal(proposal_id: int, request: dict, db: Session = Depends(get_db)):
+    """撤回提案（Operator操作）"""
+    try:
+        operator_role = request.get("operator_role")
+        
+        if not operator_role:
+            raise ValueError("operator_role is required")
+        
+        result = proposal_service.withdraw_proposal(db, proposal_id, operator_role)
+        return {
+            "success": True,
+            "data": result,
+            "message": "Proposal withdrawn successfully"
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Withdraw proposal failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/logs/detections")
@@ -471,14 +493,13 @@ async def get_network_topology():
 async def get_node_details(node_id: str, db: Session = Depends(get_db)):
     """获取节点详细信息"""
     try:
-        # 验证节点ID
-        from backend.config import GANACHE_CONFIG
-        valid_nodes = list(GANACHE_CONFIG["accounts"].keys())
-        if node_id not in valid_nodes:
+        # 尝试获取账户基本信息来验证节点是否存在
+        # 这支持静态配置的节点和动态创建的节点
+        try:
+            account_info = system_service.web3_manager.get_account_info(node_id)
+        except Exception as e:
+            logger.error(f"Node {node_id} not found in blockchain: {e}")
             raise HTTPException(status_code=404, detail=f"节点不存在: {node_id}")
-        
-        # 获取账户基本信息
-        account_info = system_service.web3_manager.get_account_info(node_id)
         
         # 获取相关的提案信息（如果是Manager）
         proposals_signed = []
@@ -608,6 +629,7 @@ async def get_available_node_indices():
     except Exception as e:
         logger.error(f"获取可用索引失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/network/nodes/create")
 async def create_network_node(request_data: dict):

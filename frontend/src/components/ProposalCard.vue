@@ -137,7 +137,8 @@ const statusClass = computed(() => {
   const mapping = {
     'pending': 'badge-warning',
     'approved': 'badge-success',
-    'rejected': 'badge-danger'
+    'rejected': 'badge-danger',
+    'withdrawn': 'badge-secondary'
   }
   return mapping[props.proposal.status] || 'badge-secondary'
 })
@@ -145,8 +146,9 @@ const statusClass = computed(() => {
 const statusText = computed(() => {
   const mapping = {
     'pending': 'Pending',
-    'approved': 'Approved',
-    'rejected': 'Rejected'
+    'approved': 'Approved', 
+    'rejected': 'Rejected',
+    'withdrawn': 'Withdrawn'
   }
   return mapping[props.proposal.status] || 'Unknown'
 })
@@ -240,8 +242,27 @@ const withdrawProposal = async () => {
   
   withdrawing.value = true
   try {
-    // 这里可以添加撤回提案的API调用
-    alert('Withdraw function not yet implemented')
+    const response = await fetch(`/api/proposals/${props.proposal.id}/withdraw`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        operator_role: props.currentRole
+      })
+    })
+    
+    const result = await response.json()
+    
+    if (result.success) {
+      alert('✅ Proposal withdrawn successfully!')
+      emit('refresh')
+    } else {
+      throw new Error(result.message || 'Failed to withdraw proposal')
+    }
+  } catch (error) {
+    console.error('Failed to withdraw proposal:', error)
+    alert(`❌ Failed to withdraw proposal: ${error.message}`)
   } finally {
     withdrawing.value = false
   }

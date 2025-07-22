@@ -146,10 +146,11 @@ const calculateNodePositions = (layout) => {
       operatorNodes.forEach((node, index) => {
         const angle = (index * 2 * Math.PI) / operatorNodes.length
         const radius = 220
-        positions.set(node.id, {
+        const position = {
           x: centerX + radius * Math.cos(angle),
           y: centerY + radius * Math.sin(angle)
-        })
+        }
+        positions.set(node.id, position)
       })
       break
 
@@ -441,7 +442,14 @@ const handleMouseLeave = () => {
 // Update layout
 const updateLayout = (newLayout) => {
   console.log(`Updating layout to ${newLayout} with ${props.nodes.length} nodes`)
-  nodePositions.value = calculateNodePositions(newLayout)
+  
+  // Clear existing positions and repopulate
+  nodePositions.value.clear()
+  const newPositions = calculateNodePositions(newLayout)
+  for (const [nodeId, position] of newPositions) {
+    nodePositions.value.set(nodeId, position)
+  }
+  
   render()
   emit('layout-updated', newLayout)
 }
@@ -473,18 +481,21 @@ const animateAttackFlow = (flowSteps) => {
 watch(() => props.nodes, (newNodes, oldNodes) => {
   console.log(`NetworkCanvas: Received ${newNodes.length} nodes (was ${oldNodes?.length || 0}):`, newNodes.map(n => n.id))
   
-  // Clear any old positions for removed nodes
-  const newNodeIds = new Set(newNodes.map(n => n.id))
-  for (const nodeId of nodePositions.value.keys()) {
-    if (!newNodeIds.has(nodeId)) {
-      nodePositions.value.delete(nodeId)
-    }
+  // Force a complete refresh of positions
+  nodePositions.value.clear()
+  
+  // Recalculate all positions for all nodes
+  const newPositions = calculateNodePositions(props.layout)
+  
+  // Update positions map by copying values instead of replacing reference
+  for (const [nodeId, position] of newPositions) {
+    nodePositions.value.set(nodeId, position)
   }
   
-  // Recalculate all positions
-  nodePositions.value = calculateNodePositions(props.layout)
+  // Force re-render with delay to ensure proper update
   nextTick(() => {
     console.log(`Rendering ${newNodes.length} nodes on canvas`)
+    console.log('All node positions:', [...nodePositions.value.entries()])
     render()
   })
 }, { deep: true })
@@ -496,13 +507,26 @@ watch(() => props.layout, (newLayout) => {
 // Lifecycle
 onMounted(() => {
   initCanvas()
-  nodePositions.value = calculateNodePositions(props.layout)
+  
+  // Initialize positions properly
+  const initialPositions = calculateNodePositions(props.layout)
+  for (const [nodeId, position] of initialPositions) {
+    nodePositions.value.set(nodeId, position)
+  }
+  
   render()
   
   // Handle window resize
   window.addEventListener('resize', () => {
     updateCanvasSize()
-    nodePositions.value = calculateNodePositions(props.layout)
+    
+    // Recalculate positions on resize
+    nodePositions.value.clear()
+    const resizedPositions = calculateNodePositions(props.layout)
+    for (const [nodeId, position] of resizedPositions) {
+      nodePositions.value.set(nodeId, position)
+    }
+    
     render()
   })
 })

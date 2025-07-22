@@ -29,5 +29,10 @@ export const networkAPI = {
   // 删除节点
   removeNode: (nodeId) => {
     return apiClient.delete(`/network/nodes/${nodeId}/remove`)
+  },
+
+  // 注册账户为网络节点
+  registerAccountAsNode: (params) => {
+    return apiClient.post('/network/nodes/register', params)
   }
 }
