@@ -1,0 +1,95 @@
+# BCFW Docker 构建忽略文件
+# 只打包必要的文件，排除文档和开发文件
+
+# 版本控制
+.git/
+.gitignore
+.github/
+
+# 文档文件 (按用户要求排除)
+*.md
+README*
+docs/
+doc/
+documentation/
+
+# 开发和测试文件
+test/
+tests/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
+.coverage
+.tox/
+.nox/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.eslintcache
+
+# Python
+*.egg-info/
+dist/
+build/
+.eggs/
+pip-log.txt
+pip-delete-this-directory.txt
+.env
+.venv
+env/
+venv/
+
+# IDE 和编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# 日志文件
+*.log
+logs/
+log/
+
+# 临时文件
+*.tmp
+*.temp
+.cache/
+
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3
+
+# 运行时生成的文件
+.ganache.pid
+.backend.pid
+.frontend.pid
+ganache.log
+backend.log
+frontend.log
+
+# 环境配置
+.env.local
+.env.development
+.env.test
+.env.production
+
+# 打包文件
+*.tar
+*.tar.gz
+*.zip
+
+# 其他不需要的文件
+演示文稿.md
+CLAUDE.md
+test_report.md

@@ -1,0 +1,59 @@
+# BCFW - 区块链智能安防平台 Docker Compose 配置
+# 可选配置文件，提供更灵活的开发环境
+
+version: '3.8'
+
+services:
+  bcfw-demo:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: bcfw-platform
+    ports:
+      - "5173:5173"   # 前端界面
+      - "8000:8000"   # 后端API
+      - "8545:8545"   # Ganache RPC
+    volumes:
+      # 可选：持久化数据（用于开发环境）
+      - ./docker-data/ganache:/app/data/ganache
+      - ./docker-data/db:/app/data/db
+      - ./docker-logs:/app/logs
+    environment:
+      - NODE_ENV=production
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - bcfw-network
+
+  # 可选：如果需要外部数据库（生产环境）
+  # postgres:
+  #   image: postgres:15-alpine
+  #   container_name: bcfw-postgres
+  #   environment:
+  #     POSTGRES_DB: bcfw
+  #     POSTGRES_USER: bcfw_user
+  #     POSTGRES_PASSWORD: bcfw_password
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   networks:
+  #     - bcfw-network
+
+volumes:
+  postgres_data:  # 数据库数据持久化
+
+networks:
+  bcfw-network:
+    driver: bridge
+
+# 使用说明:
+# 1. 构建并启动: docker-compose up --build
+# 2. 后台运行: docker-compose up -d
+# 3. 查看日志: docker-compose logs -f
+# 4. 停止服务: docker-compose down
+# 5. 完全清理: docker-compose down -v --rmi all

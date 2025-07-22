@@ -130,6 +130,21 @@ python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 node scripts/deploy_multisig_simple.js
 ```
 
+**Docker Deployment (Global Distribution):**
+```bash
+# One-click deployment from Docker Hub
+docker run -d -p 5173:5173 -p 8000:8000 -p 8545:8545 --name bcfw [YOUR_DOCKER_HUB_IMAGE]
+
+# Access URLs
+# - Frontend: http://localhost:5173
+# - Backend API: http://localhost:8000
+# - Ganache RPC: http://localhost:8545
+
+# Container management
+docker stop bcfw && docker rm bcfw    # Stop and cleanup
+docker logs bcfw                      # View container logs
+```
+
 **Frontend Development (Phase 3 Complete):**
 ```bash
 # Navigate to frontend directory

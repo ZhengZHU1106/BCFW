@@ -2,7 +2,7 @@ import axios from 'axios'
 
 // 创建axios实例
 const apiClient = axios.create({
-  baseURL: '/api',
+  baseURL: import.meta.env.PROD ? 'http://localhost:8000/api' : '/api',
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json'
