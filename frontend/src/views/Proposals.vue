@@ -113,17 +113,64 @@ const refreshProposals = async () => {
 }
 
 // Handle proposal signing
+const signingInProgress = ref(new Set())
+
 const handleSignProposal = async (proposalId, managerIndex) => {
+  const signingKey = `${proposalId}-${managerIndex}`
+  
+  // Prevent duplicate signing attempts
+  if (signingInProgress.value.has(signingKey)) {
+    console.log('Signing already in progress for this proposal and manager')
+    return
+  }
+  
+  signingInProgress.value.add(signingKey)
+  
+  // Pause auto-refresh during signing to prevent race conditions
+  if (refreshTimer) {
+    clearInterval(refreshTimer)
+  }
+  
   try {
     const result = await systemAPI.signProposal(proposalId, managerIndex)
     if (result.success) {
-      // Refresh list
+      // Refresh list immediately to show updated state
       await refreshProposals()
-      alert('Proposal signed successfully!')
+      
+      // Check if proposal is still pending, if not it was executed
+      const updatedProposal = proposals.value.find(p => p.id === proposalId)
+      if (!updatedProposal || updatedProposal.status !== 'pending') {
+        alert('✅ Proposal approved and executed successfully! Rewards have been distributed.')
+      } else {
+        alert('✅ Proposal signed successfully! Waiting for additional signatures...')
+      }
     }
   } catch (error) {
     console.error('Signing failed:', error)
-    alert('Signing failed. Please try again later.')
+    
+    // Provide more specific error messages
+    if (error.response?.status === 400) {
+      const errorMsg = error.response.data?.detail || error.message
+      if (errorMsg.includes('提案状态不允许签名')) {
+        alert('This proposal has already been executed by another manager.')
+      } else if (errorMsg.includes('已经签名过')) {
+        alert('You have already signed this proposal.')
+      } else {
+        alert(`Signing failed: ${errorMsg}`)
+      }
+    } else {
+      alert('Signing failed. Please try again later.')
+    }
+    
+    // Refresh to show current state
+    await refreshProposals()
+  } finally {
+    signingInProgress.value.delete(signingKey)
+    
+    // Resume auto-refresh after signing attempt
+    if (!refreshTimer) {
+      refreshTimer = setInterval(refreshProposals, 10000) // Increased to 10 seconds
+    }
   }
 }
 
@@ -143,8 +190,8 @@ onMounted(() => {
   // Initialize data
   refreshProposals()
   
-  // Regular refresh
-  refreshTimer = setInterval(refreshProposals, 5000)
+  // Regular refresh - reduced frequency during active signing
+  refreshTimer = setInterval(refreshProposals, 10000)
 })
 
 onUnmounted(() => {

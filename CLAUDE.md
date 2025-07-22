@@ -219,6 +219,10 @@ POST /api/test/auto-distribute  # Test automatic reward distribution
 - ✅ **Enhanced Security**: Role boundaries enforced at blockchain level
 - ✅ **MetaMask Ready**: Foundation for external wallet integration
 
+**Known Issues:**
+- 🐛 **User Experience Issue**: 5-second wait time after proposal signing due to synchronous reward distribution and blockchain transaction confirmations
+- 📝 **Solution Identified**: Asynchronous reward processing + immediate UI feedback (see Phase 9 plan below)
+
 **Remaining Technical Challenges:**
 - 🔄 **MetaMask Integration**: Direct user wallet interaction for genuine Web3 experience
 - 🔄 **Advanced Role Management**: Dynamic role assignment and management features
@@ -246,39 +250,46 @@ POST /api/test/auto-distribute  # Test automatic reward distribution
 - `0.70-0.80`: Alert only, manual proposal creation by Operator
 - `<0.70`: Silent background logging
 
-## Next Development Phases: Advanced Blockchain Features
+## Next Development Phases: User Experience & Advanced Features
 
-### **Phase 7: Reward Pool Mechanism** (2-3 days)
-**Objective**: Eliminate incentive gaming by implementing contribution-based reward distribution
+### **Phase 9: User Experience Optimization** (2-3 days) **[PLANNED]**
+**Objective**: Eliminate 5-second wait time after proposal signing for better user experience
 
-**Key Improvements:**
-- Replace "final signer gets reward" with contribution-based pool distribution
-- Track Manager performance metrics (signature count, response time, proposal quality)
-- Implement periodic reward distribution based on contribution scores
-- Add reward pool management and funding mechanisms
+**Current Problem:**
+- Users experience 5-second delay after clicking "Sign" due to synchronous reward distribution
+- Multiple blockchain transactions (reward sending + pool distribution) block the UI
+- Creates perception of system being slow/unresponsive
 
-**Technical Changes:**
-- Smart contract: Add reward pool management and contribution tracking
-- Backend: Implement contribution scoring and periodic distribution logic
-- Frontend: Display contribution metrics and reward pool status
-- Database: Add contribution records and reward distribution history
+**Solution: Asynchronous Processing + Immediate UI Feedback**
+- **Stage 1 (Required)**: Asynchronous reward processing + immediate UI response
+  - Separate reward distribution from signing workflow  
+  - Return success response immediately after signature validation
+  - Process rewards in background with error handling
+  - **Expected Improvement**: Wait time 5s → <1s
 
-### **Phase 8: Contract-Level Role Separation** ✅ **COMPLETED**
-**Objective**: Move role validation to smart contract layer for true decentralization
+- **Stage 2 (Optional)**: Progress indicators for background operations
+  - Visual feedback for ongoing reward transactions
+  - Real-time status updates for better transparency
 
-**Completed Improvements:**
-- ✅ Implemented role-based access control directly in smart contract
-- ✅ Separated Operator (proposal creation) and Manager (proposal signing) permissions
-- ✅ Removed backend role validation dependency
-- ✅ Enabled role management through contract owner functions
+- **Stage 3 (Optional)**: WebSocket real-time updates
+  - Eliminate polling, provide instant status updates
+  - Better multi-user experience
 
-**Technical Changes Completed:**
-- ✅ Smart contract: Added role mappings and function-level access control
-- ✅ Backend: Simplified API by removing role validation logic
-- ✅ Frontend: Updated to respect contract-enforced role boundaries
-- ✅ Deployment: Setup role assignment during contract initialization
+**Technical Implementation:**
+```
+Files to modify:
+- backend/app/services.py: Modify _execute_approved_proposal() 
+- backend/app/background_tasks.py: New async reward processor
+- frontend/src/views/Proposals.vue: Immediate UI feedback
+```
 
-### **Phase 9: MetaMask Integration** (7-10 days)
+**Investment vs Impact:**
+- **User Experience Improvement**: 90% problem resolution
+- **Code Complexity**: Medium (manageable)
+- **Maintenance Cost**: Low
+- **ROI**: High (core UX issue resolution)
+
+### **Phase 10: MetaMask Integration** (7-10 days) **[FUTURE]**
 **Objective**: Enable direct user wallet interaction for genuine Web3 experience
 
 **Key Improvements:**
@@ -293,12 +304,6 @@ POST /api/test/auto-distribute  # Test automatic reward distribution
 - Backend: Add signature verification for MetaMask-signed transactions
 - UX: Design intuitive wallet connection and transaction confirmation flows
 
-### **Legacy Phase 5 Integration:**
-The original Phase 5 account structure improvements will be integrated into Phase 8:
-- Fixed 10-account structure (Manager_0-2, Treasury, Operator_0-5)
-- Role-specific frontend interfaces
-- API permission validation
-- Contract-based role management
 
 ## Development Guidelines
 

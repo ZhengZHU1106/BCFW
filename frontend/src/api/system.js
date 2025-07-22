@@ -18,9 +18,9 @@ export const systemAPI = {
 
   // 签署提案
   signProposal(proposalId, managerIndex) {
-    return apiClient.post(`/proposals/${proposalId}/sign`, {
-      manager_index: managerIndex
-    })
+    // Convert managerIndex to manager_role query parameter
+    const managerRole = `manager_${managerIndex}`
+    return apiClient.post(`/proposals/${proposalId}/sign?manager_role=${managerRole}`)
   },
 
   // 手动创建提案

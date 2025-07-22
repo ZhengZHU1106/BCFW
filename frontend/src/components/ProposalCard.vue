@@ -73,9 +73,9 @@
                 v-if="canSign(index)"
                 @click="signProposal(index)"
                 class="btn btn-primary btn-sm"
-                :disabled="signing"
+                :disabled="signing || props.proposal.status !== 'pending'"
               >
-                {{ signing ? 'Signing...' : 'Sign' }}
+                {{ signing ? '⏳ Signing...' : '✍️ Sign' }}
               </button>
             </div>
           </div>
@@ -216,7 +216,8 @@ const canSign = (managerIndex) => {
   const managerRole = `manager_${managerIndex}`
   return props.currentRole === managerRole && 
          props.proposal.status === 'pending' && 
-         !signers.value[managerIndex].signed
+         !signers.value[managerIndex].signed &&
+         !signing.value // Prevent signing when already in progress
 }
 
 const signProposal = async (managerIndex) => {
