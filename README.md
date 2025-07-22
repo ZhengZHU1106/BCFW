@@ -4,23 +4,54 @@ A demonstration prototype combining AI threat detection with blockchain multi-si
 
 ## 🚀 Quick Start (Recommended)
 
-### Docker - One Command Deployment
+### Docker Deployment
 
+#### Method 1: Command Line (Recommended)
+
+**Step 1: Pull the image**
 ```bash
-# Pull and run the platform
-docker run -d -p 5173:5173 -p 8000:8000 -p 8545:8545 --name bcfw coderehero/bcfw:v3
-
-# Access the platform
-# Frontend: http://localhost:5173
-# Backend API: http://localhost:8000
-# Blockchain RPC: http://localhost:8545
+docker pull coderehero/bcfw:v3
 ```
+
+**Step 2: Run the container (single command)**
+```bash
+docker run -d -p 5173:5173 -p 8000:8000 -p 8545:8545 --name bcfw coderehero/bcfw:v3
+```
+
+**Step 3: Access the platform**
+- Frontend: http://localhost:5173
+- Backend API: http://localhost:8000
+- Blockchain RPC: http://localhost:8545
+
+#### Method 2: Docker Desktop GUI
+
+1. **Search and Pull:**
+   - Open Docker Desktop
+   - Go to "Images" tab
+   - Search for `coderehero/bcfw`
+   - Click "Pull" on version `v3`
+
+2. **Run Container:**
+   - Click "Run" button on the image
+   - Click "Optional Settings" dropdown
+   - Container name: `bcfw`
+   - Port mapping:
+     - Host: 5173 → Container: 5173
+     - Host: 8000 → Container: 8000  
+     - Host: 8545 → Container: 8545
+   - Click "Run"
+
+3. **Access:** Same URLs as above
 
 **Container Management:**
 ```bash
-docker stop bcfw     # Stop
-docker start bcfw    # Start  
-docker rm bcfw      # Remove
+# View logs
+docker logs bcfw
+
+# Stop/Start/Remove
+docker stop bcfw
+docker start bcfw
+docker rm bcfw
 ```
 
 ### Local Development
