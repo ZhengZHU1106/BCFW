@@ -12,6 +12,7 @@ from ..database.models import Proposal, ExecutionLog, ThreatDetectionLog
 from ..blockchain.web3_manager import get_web3_manager
 from ..ai_module.model_loader import get_threat_model
 from ..config import THREAT_THRESHOLDS, INCENTIVE_CONFIG
+from . import background_tasks
 
 logger = logging.getLogger(__name__)
 
@@ -291,8 +292,12 @@ class ProposalService:
             
             # 更新传统签名信息（向后兼容）
             signed_by.append(manager_role)
-            proposal.signed_by = signed_by
+            # Force SQLAlchemy to detect JSON field change by creating new list
+            proposal.signed_by = list(signed_by)
             proposal.signatures_count = len(signed_by)
+            # Mark the field as modified to ensure SQLAlchemy commits the change
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(proposal, 'signed_by')
             
             # 检查是否达到签名要求
             if proposal.signatures_count >= proposal.signatures_required:
@@ -342,21 +347,38 @@ class ProposalService:
             db.add(execution_log)
             db.flush()
             
-            # 发送奖励给最终签名者
-            reward_result = self.web3_manager.send_reward("treasury", final_signer)
+            # 发送奖励给所有签名者
+            all_signers = proposal.signed_by or []
+            all_signers_rewarded = []
+            reward_tx_hashes = []
+            successful_rewards = 0
             
-            if reward_result["success"]:
-                # 更新提案的奖励信息
-                proposal.reward_paid = True
-                proposal.reward_recipient = final_signer
-                proposal.reward_tx_hash = reward_result["tx_hash"]
+            for signer in all_signers:
+                reward_result = self.web3_manager.send_reward("treasury", signer)
                 
-                # 更新执行日志
-                execution_log.reward_tx_hash = reward_result["tx_hash"]
-                
-                logger.info(f"💰 奖励发送成功: {final_signer} 获得 {INCENTIVE_CONFIG['proposal_reward']} ETH")
-            else:
-                logger.error(f"❌ 奖励发送失败: {reward_result['error']}")
+                if reward_result["success"]:
+                    all_signers_rewarded.append(signer)
+                    reward_tx_hashes.append(reward_result["tx_hash"])
+                    successful_rewards += 1
+                    logger.info(f"💰 奖励发送成功: {signer} 获得 {INCENTIVE_CONFIG['proposal_reward']} ETH")
+                else:
+                    logger.error(f"❌ 奖励发送失败: {signer} - {reward_result['error']}")
+            
+            # 更新提案的新奖励信息
+            proposal.all_signers_rewarded = list(all_signers_rewarded)
+            proposal.reward_tx_hashes = list(reward_tx_hashes)
+            proposal.reward_paid = successful_rewards > 0
+            
+            # 保持向后兼容性
+            if all_signers_rewarded:
+                proposal.reward_recipient = final_signer  # 保留最后签名者信息
+                proposal.reward_tx_hash = reward_tx_hashes[-1] if reward_tx_hashes else None
+                execution_log.reward_tx_hash = reward_tx_hashes[-1] if reward_tx_hashes else None
+            
+            # 强制SQLAlchemy检测JSON字段变化
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(proposal, 'all_signers_rewarded')
+            flag_modified(proposal, 'reward_tx_hashes')
             
             proposal.executed_at = datetime.now()
             
@@ -364,35 +386,34 @@ class ProposalService:
             result = {
                 "status": "approved_and_executed",
                 "execution_log_id": execution_log.id,
-                "reward_paid": reward_result["success"],
-                "reward_tx_hash": reward_result.get("tx_hash"),
-                "message": "提案已批准并执行，奖励已发送",
+                "reward_paid": successful_rewards > 0,
+                "total_rewards_sent": successful_rewards,
+                "all_signers_rewarded": all_signers_rewarded,
+                "reward_tx_hashes": reward_tx_hashes,
+                "reward_tx_hash": reward_tx_hashes[-1] if reward_tx_hashes else None,  # 向后兼容
+                "message": f"提案已批准并执行，已向{successful_rewards}位签名者发送奖励",
                 "auto_distributed": False,
                 "distribution_amount": 0
             }
             
-            # 自动触发基于贡献度的奖励分配
+            # 异步触发基于贡献度的奖励分配（不阻塞主流程）
             try:
-                # 使用当前实例直接调用（这里的self是ProposalService实例）
-                # 需要获取RewardPoolService实例
+                # 获取RewardPoolService实例
                 reward_pool_service = RewardPoolService()
-                auto_distribution = reward_pool_service._auto_distribute_on_execution()
                 
-                if auto_distribution.get("success"):
-                    distributions = auto_distribution.get("distributions", [])
-                    if distributions:
-                        logger.info(f"💰 自动分配奖励完成: 分配给 {len(distributions)} 个Manager")
-                        # 在返回结果中包含自动分配信息
-                        result["auto_distributed"] = True
-                        result["distribution_amount"] = auto_distribution.get("total_distributed", 0)
-                        result["distributions"] = distributions
-                    else:
-                        logger.info("💰 自动分配奖励: 暂无符合条件的Manager")
+                # 调度到后台执行，立即返回
+                schedule_result = background_tasks.schedule_reward_distribution(reward_pool_service)
+                
+                if schedule_result.get("success"):
+                    logger.info("📋 奖励分配已调度到后台处理")
+                    result["auto_distributed"] = "scheduled"  # 标记为已调度
+                    result["distribution_message"] = "Reward distribution processing in background"
                 else:
-                    logger.warning(f"💰 自动分配奖励未触发: {auto_distribution.get('message')}")
+                    logger.warning(f"⚠️ 奖励分配调度失败: {schedule_result.get('error')}")
                     
             except Exception as e:
-                logger.error(f"❌ 自动分配奖励失败: {e}")
+                logger.error(f"❌ 调度奖励分配失败: {e}")
+                # 异步处理失败不影响主流程
             
             return result
             
@@ -444,6 +465,49 @@ class ProposalService:
             
         except Exception as e:
             logger.error(f"❌ Failed to withdraw proposal: {e}")
+            db.rollback()
+            raise
+    
+    def reject_proposal(self, db: Session, proposal_id: int, manager_role: str) -> Dict:
+        """Manager拒绝提案 (1票否决制)"""
+        try:
+            # 查找提案
+            proposal = db.query(Proposal).filter(Proposal.id == proposal_id).first()
+            if not proposal:
+                raise ValueError(f"Proposal not found: {proposal_id}")
+            
+            # 检查提案状态
+            if proposal.status != "pending":
+                raise ValueError(f"Cannot reject proposal with status: {proposal.status}")
+            
+            # 验证manager角色
+            valid_managers = ["manager_0", "manager_1", "manager_2"]
+            if manager_role not in valid_managers:
+                raise ValueError(f"Invalid manager role: {manager_role}")
+            
+            # 检查是否已经拒绝过
+            if proposal.rejected_by:
+                raise ValueError(f"Proposal already rejected by {proposal.rejected_by}")
+            
+            # 1票否决：立即拒绝提案
+            proposal.status = "rejected"
+            proposal.rejected_at = datetime.now()
+            proposal.rejected_by = manager_role
+            
+            db.commit()
+            
+            logger.info(f"🚫 Proposal rejected: ID-{proposal_id} by {manager_role}")
+            
+            return {
+                "status": "rejected",
+                "message": "Proposal rejected successfully",
+                "proposal_id": proposal_id,
+                "rejected_by": manager_role,
+                "rejected_at": proposal.rejected_at.isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to reject proposal: {e}")
             db.rollback()
             raise
 

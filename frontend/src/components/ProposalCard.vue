@@ -73,9 +73,18 @@
                 v-if="canSign(index)"
                 @click="signProposal(index)"
                 class="btn btn-primary btn-sm"
-                :disabled="signing || props.proposal.status !== 'pending'"
+                :disabled="signing || rejecting || props.proposal.status !== 'pending'"
               >
                 {{ signing ? '⏳ Signing...' : '✍️ Sign' }}
+              </button>
+              <button 
+                v-if="canReject(index)"
+                @click="rejectProposal(index)"
+                class="btn btn-danger btn-sm"
+                :disabled="signing || rejecting || props.proposal.status !== 'pending'"
+                style="margin-left: 0.5rem"
+              >
+                {{ rejecting ? '⏳ Rejecting...' : '❌ Reject' }}
               </button>
             </div>
           </div>
@@ -102,7 +111,18 @@
         <span class="result-text">Proposal Approved and Executed</span>
       </div>
       <div class="result-details">
-        <p>Reward sent to final signer: {{ finalSignerReward }}</p>
+        <p>Rewards sent to: {{ finalSignerReward }}</p>
+      </div>
+    </div>
+    
+    <!-- 拒绝结果 -->
+    <div v-if="proposal.status === 'rejected'" class="rejection-result">
+      <div class="result-header">
+        <span class="result-icon">❌</span>
+        <span class="result-text">Proposal Rejected</span>
+      </div>
+      <div class="result-details">
+        <p>Rejected by: {{ rejectionDetails }}</p>
       </div>
     </div>
   </div>
@@ -126,6 +146,7 @@ const emit = defineEmits(['sign', 'refresh'])
 
 // 状态
 const signing = ref(false)
+const rejecting = ref(false)
 const withdrawing = ref(false)
 
 // 计算属性
@@ -202,14 +223,32 @@ const signers = computed(() => {
 })
 
 const finalSignerReward = computed(() => {
-  if (props.proposal.final_signer) {
-    return `${props.proposal.final_signer} (0.01 ETH)`
+  // 新的奖励系统：显示所有获得奖励的签名者
+  if (props.proposal.all_signers_rewarded && props.proposal.all_signers_rewarded.length > 0) {
+    const rewardedCount = props.proposal.all_signers_rewarded.length
+    const rewardAmount = (rewardedCount * 0.01).toFixed(2)
+    return `${rewardedCount} signers (${rewardAmount} ETH total)`
   }
-  return 'Unknown'
+  // 向后兼容：使用旧的final_signer字段
+  if (props.proposal.reward_recipient || props.proposal.final_signer) {
+    const recipient = props.proposal.reward_recipient || props.proposal.final_signer
+    return `${recipient} (0.01 ETH)`
+  }
+  return 'Processing...'
 })
 
 const showActions = computed(() => {
   return props.proposal.status === 'pending'
+})
+
+const rejectionDetails = computed(() => {
+  if (props.proposal.rejected_by) {
+    const managerName = props.proposal.rejected_by.replace('manager_', 'Manager ')
+    const rejectedAt = props.proposal.rejected_at ? 
+      new Date(props.proposal.rejected_at).toLocaleString('en-US') : ''
+    return `${managerName}${rejectedAt ? ` on ${rejectedAt}` : ''}`
+  }
+  return 'Unknown'
 })
 
 // 方法
@@ -219,7 +258,16 @@ const canSign = (managerIndex) => {
   return props.currentRole === managerRole && 
          props.proposal.status === 'pending' && 
          !signers.value[managerIndex].signed &&
-         !signing.value // Prevent signing when already in progress
+         !signing.value && !rejecting.value // Prevent signing when already in progress
+}
+
+const canReject = (managerIndex) => {
+  // 检查当前角色是否为对应的manager且提案未被拒绝
+  const managerRole = `manager_${managerIndex}`
+  return props.currentRole === managerRole && 
+         props.proposal.status === 'pending' && 
+         !props.proposal.rejected_by &&
+         !signing.value && !rejecting.value // Prevent rejecting when other actions in progress
 }
 
 const signProposal = async (managerIndex) => {
@@ -230,6 +278,42 @@ const signProposal = async (managerIndex) => {
     await emit('sign', props.proposal.id, managerIndex)
   } finally {
     signing.value = false
+  }
+}
+
+const rejectProposal = async (managerIndex) => {
+  if (rejecting.value) return
+  
+  if (!confirm('Are you sure you want to reject this proposal? This action cannot be undone.')) {
+    return
+  }
+  
+  rejecting.value = true
+  try {
+    const managerRole = `manager_${managerIndex}`
+    const response = await fetch(`/api/proposals/${props.proposal.id}/reject`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        manager_role: managerRole
+      })
+    })
+    
+    const result = await response.json()
+    
+    if (result.success) {
+      alert('✅ Proposal rejected successfully!')
+      emit('refresh')
+    } else {
+      throw new Error(result.message || 'Failed to reject proposal')
+    }
+  } catch (error) {
+    console.error('Failed to reject proposal:', error)
+    alert(`❌ Failed to reject proposal: ${error.message}`)
+  } finally {
+    rejecting.value = false
   }
 }
 
@@ -506,6 +590,39 @@ const formatAddress = (address) => {
 }
 
 .result-details p {
+  margin: 0;
+}
+
+.rejection-result {
+  background-color: #f8d7da;
+  border: 1px solid #f5c6cb;
+  border-radius: 4px;
+  padding: 1rem;
+  margin-top: 1rem;
+}
+
+.rejection-result .result-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.rejection-result .result-icon {
+  font-size: 1.2rem;
+}
+
+.rejection-result .result-text {
+  font-weight: 500;
+  color: #721c24;
+}
+
+.rejection-result .result-details {
+  font-size: 0.875rem;
+  color: #721c24;
+}
+
+.rejection-result .result-details p {
   margin: 0;
 }
 </style>

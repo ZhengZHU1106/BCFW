@@ -74,7 +74,7 @@ frontend/                  # Vue 3 + Vite frontend (✅ Complete)
    - Medium-high (0.80-0.90): Automatic proposal creation
    - Medium-low (0.70-0.80): Alert for manual operator decision
    - Low (<0.70): Silent logging
-3. **Multi-sig Process**: Proposals require 2/3 Manager signatures for approval via custom smart contract
+3. **Multi-sig Process**: Proposals require 2/3 Manager signatures for approval OR 1-vote veto rejection via custom smart contract
 4. **Incentive System**: Final signer receives 0.01 ETH from treasury automatically upon execution
 5. **Execution Simulation**: Security actions logged in database (no real firewall interaction)
 
@@ -84,7 +84,8 @@ The project uses a custom `MultiSigProposal` smart contract written in Solidity 
 
 **Contract Features:**
 - **Owners**: 3 Manager accounts (manager_0, manager_1, manager_2) with deterministic addresses
-- **Threshold**: 2/3 signatures required for proposal execution
+- **Approval Threshold**: 2/3 signatures required for proposal execution
+- **Rejection System**: 1-vote veto - any single manager can reject immediately
 - **Automatic Execution**: Proposals execute automatically when threshold is reached
 - **ETH Rewards**: Integrated reward system sending 0.01 ETH to final signer
 - **Event Logging**: Complete on-chain audit trail via events
@@ -92,6 +93,7 @@ The project uses a custom `MultiSigProposal` smart contract written in Solidity 
 **Key Contract Methods:**
 - `createProposal(address target, uint256 amount, bytes data)` - Create new proposal
 - `signProposal(uint256 proposalId)` - Sign existing proposal
+- `rejectProposal(uint256 proposalId)` - Reject proposal (1-vote veto)
 - `getProposal(uint256 proposalId)` - Retrieve proposal details
 - `getContractInfo()` - Get contract configuration
 
@@ -167,6 +169,7 @@ POST /api/attack/simulate        # AI threat detection simulation
 GET  /api/system/status         # System health and account balances
 GET  /api/proposals             # Multi-sig proposal management
 POST /api/proposals/{id}/sign   # Manager proposal signing
+POST /api/proposals/{id}/reject # Manager proposal rejection (1-vote veto)
 GET  /api/logs/detections      # Threat detection audit trail
 GET  /api/logs/executions      # Response execution logs
 POST /api/test/reward          # Test reward sending function
@@ -185,7 +188,7 @@ POST /api/test/auto-distribute  # Test automatic reward distribution
   - **Reward Pool Management**: Pool balance display, Manager contribution tracking, deposit functionality
   - **Real-time Updates**: Live contribution scores and quality ratings
 - **Threat Detection**: Real-time threat monitoring with attack simulation
-- **Proposals**: Multi-signature proposal management with role-based access
+- **Proposals**: Multi-signature proposal management with role-based access and 1-vote veto rejection
 - **History**: Comprehensive audit logs for detections and executions
 - **Account Management**: Real Web3 account creation with private key management
 - **Role Switching**: Dynamic role switching between Operator and Manager views
@@ -209,14 +212,17 @@ POST /api/test/auto-distribute  # Test automatic reward distribution
 - ✅ **Phase 3.5: UI Internationalization** - All frontend text converted to English
 - ✅ **Phase A: Reward Pool Mechanism** - Complete reward pool system with contribution-based distribution
 - ✅ **Phase 8: Contract-Level Role Separation** - True decentralized role management with smart contract enforcement
+- ✅ **Phase 8.5: Proposal Rejection System** - 1-vote veto rejection mechanism with full UI support
 
 **MultiSig Contract Features (Phase 4 Complete):**
 - ✅ Custom Solidity smart contract (`MultiSigProposal.sol`)
 - ✅ 2/3 multi-signature threshold with Manager accounts as owners
+- ✅ 1-vote veto rejection system with immediate effect
 - ✅ Automatic proposal execution when signature threshold is reached
 - ✅ Integrated ETH reward system (0.01 ETH to final signer)
 - ✅ Python integration module for seamless backend interaction
 - ✅ On-chain audit trail via smart contract events
+- ✅ Complete rejection tracking and audit trail
 - ✅ Backward compatibility with existing database-based proposal system
 
 **Phase A Optimizations (Complete):**
@@ -228,11 +234,19 @@ POST /api/test/auto-distribute  # Test automatic reward distribution
 
 **Phase 8 Achievements (Contract-Level Role Separation):**
 - ✅ **Smart Contract Role Management**: Role validation moved to smart contract layer
-- ✅ **True Role Separation**: Operators create proposals, Managers sign proposals
+- ✅ **True Role Separation**: Operators create proposals, Managers sign/reject proposals
 - ✅ **Contract-Enforced Permissions**: Smart contract validates all role-based actions
 - ✅ **Decentralized Authorization**: No backend dependency for role validation
 - ✅ **Enhanced Security**: Role boundaries enforced at blockchain level
 - ✅ **MetaMask Ready**: Foundation for external wallet integration
+
+**Phase 8.5 Achievements (Proposal Rejection System):**
+- ✅ **1-Vote Veto System**: Any single manager can immediately reject proposals
+- ✅ **Database Integration**: Added rejected_by and rejected_at fields to Proposal model
+- ✅ **API Implementation**: POST /api/proposals/{id}/reject endpoint with validation
+- ✅ **Frontend UI**: Reject button with confirmation dialog and status display
+- ✅ **Audit Trail**: Complete tracking of rejection events with timestamps
+- ✅ **Statistics Integration**: Rejection counts included in proposal statistics
 
 **Known Issues:**
 - 🐛 **User Experience Issue**: 5-second wait time after proposal signing due to synchronous reward distribution and blockchain transaction confirmations
@@ -246,13 +260,13 @@ POST /api/test/auto-distribute  # Test automatic reward distribution
 
 **Account Management:**
 - Fixed mnemonic ensures deterministic account addresses across restarts
-- Manager accounts (0-2) used for multi-signature proposal approval (2/3 threshold)
+- Manager accounts (0-2) used for multi-signature proposal approval (2/3 threshold) or rejection (1-vote veto)
 - Treasury account (3) pays 0.01 ETH incentive to final proposal signer
 - Web3 integration handles all blockchain interactions via local Ganache
 
 **API Structure (Phase A Complete - Reward Pool System):**
 - **AI Integration**: Real Ensemble_Hybrid model with joblib-compatible preprocessors
-- **Database**: SQLite with ThreatDetectionLog, Proposal, ExecutionLog models (extended with contract fields)
+- **Database**: SQLite with ThreatDetectionLog, Proposal, ExecutionLog models (extended with rejection tracking)
 - **Blockchain**: Web3.py integration with Ganache + custom MultiSig smart contract
 - **MultiSig Contract**: Python integration module (`multisig_contract.py`) for seamless interaction
 - **Reward Pool System**: Persistent state management with contribution tracking and auto-distribution

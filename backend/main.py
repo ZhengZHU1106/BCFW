@@ -188,6 +188,31 @@ async def sign_proposal(proposal_id: int, manager_role: str, db: Session = Depen
         logger.error(f"提案签名失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/proposals/{proposal_id}/reject")
+async def reject_proposal(proposal_id: int, request: dict, db: Session = Depends(get_db)):
+    """Manager拒绝提案"""
+    try:
+        manager_role = request.get("manager_role")
+        if not manager_role:
+            raise HTTPException(status_code=400, detail="manager_role is required")
+        
+        # 验证manager_role
+        valid_managers = ["manager_0", "manager_1", "manager_2"]
+        if manager_role not in valid_managers:
+            raise HTTPException(status_code=400, detail=f"无效的Manager角色: {manager_role}")
+        
+        result = proposal_service.reject_proposal(db, proposal_id, manager_role)
+        return {
+            "success": True,
+            "data": result,
+            "message": "提案拒绝成功"
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"提案拒绝失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/proposals/create")
 async def create_manual_proposal(
     request: dict,
@@ -298,7 +323,7 @@ async def fund_account(request: dict):
         
         # 执行转账
         treasury_account = treasury_info['address']
-        treasury_private_key = web3_manager.accounts['treasury']['private_key']
+        treasury_private_key = web3_manager.private_keys['treasury']
         
         # 构建交易
         nonce = web3_manager.w3.eth.get_transaction_count(treasury_account)

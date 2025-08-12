@@ -36,6 +36,9 @@ class Proposal(Base):
     reward_paid = Column(Boolean, default=False, comment='是否已支付奖励')
     reward_recipient = Column(String(100), comment='奖励接收者')
     reward_tx_hash = Column(String(66), comment='奖励交易哈希')
+    # 新的奖励分配系统
+    all_signers_rewarded = Column(JSON, default=list, comment='所有获得奖励的签名者列表')
+    reward_tx_hashes = Column(JSON, default=list, comment='所有奖励交易哈希列表')
     
     # MultiSig合约集成字段
     contract_proposal_id = Column(Integer, nullable=True, comment='合约中的提案ID')
@@ -47,6 +50,8 @@ class Proposal(Base):
     executed_at = Column(DateTime, comment='执行时间')
     withdrawn_at = Column(DateTime, comment='撤回时间')
     withdrawn_by = Column(String(50), comment='撤回者角色')
+    rejected_at = Column(DateTime, comment='拒绝时间')
+    rejected_by = Column(String(50), comment='拒绝者角色')
     
     # 扩展数据
     detection_data = Column(JSON, comment='完整检测数据')
@@ -68,6 +73,8 @@ class Proposal(Base):
             'reward_paid': self.reward_paid,
             'reward_recipient': self.reward_recipient,
             'reward_tx_hash': self.reward_tx_hash,
+            'all_signers_rewarded': self.all_signers_rewarded,
+            'reward_tx_hashes': self.reward_tx_hashes,
             'contract_proposal_id': self.contract_proposal_id,
             'contract_address': self.contract_address,
             'created_at': self.created_at.isoformat() if self.created_at else None,
@@ -75,6 +82,8 @@ class Proposal(Base):
             'executed_at': self.executed_at.isoformat() if self.executed_at else None,
             'withdrawn_at': self.withdrawn_at.isoformat() if self.withdrawn_at else None,
             'withdrawn_by': self.withdrawn_by,
+            'rejected_at': self.rejected_at.isoformat() if self.rejected_at else None,
+            'rejected_by': self.rejected_by,
             'detection_data': self.detection_data
         }
 

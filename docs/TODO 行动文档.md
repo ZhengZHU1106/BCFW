@@ -209,6 +209,42 @@ TODO 行动文档
 - [x] 修复提案数据结构中signed_by字段处理问题
 - [x] 完整测试系统功能和端到端流程
 
+### **第八点五阶段：提案拒绝系统** ✅ **已完成 (1天)**
+
+**1-vote veto拒绝机制实现:**
+- [x] **问题识别**: Proposal Management界面显示"Rejected"选项但Manager无Reject按钮 ✅
+- [x] **设计决策**: 实现1-vote veto机制，任意单个Manager可立即拒绝提案 ✅
+- [x] **数据库扩展**: 添加rejected_by和rejected_at字段追踪拒绝信息 ✅
+- [x] **后端API**: 实现POST /api/proposals/{id}/reject端点和业务逻辑 ✅
+- [x] **前端UI**: 添加Reject按钮、确认对话框和拒绝状态显示 ✅
+- [x] **完整测试**: 验证拒绝功能正常工作，包括统计更新和审计追踪 ✅
+
+**Phase 8.5.1: 数据库schema扩展** ✅
+- [x] 添加Proposal.rejected_by字段存储拒绝者角色
+- [x] 添加Proposal.rejected_at字段存储拒绝时间戳
+- [x] 执行数据库迁移（SQLite ALTER TABLE）
+- [x] 更新模型to_dict方法包含新字段
+
+**Phase 8.5.2: 后端业务逻辑实现** ✅
+- [x] ProposalService.reject_proposal()方法实现1-vote veto逻辑
+- [x] POST /api/proposals/{id}/reject API端点
+- [x] Manager角色验证和权限检查
+- [x] 立即拒绝状态更新（无需等待其他Manager）
+
+**Phase 8.5.3: 前端UI集成** ✅
+- [x] ProposalCard组件添加❌ Reject按钮
+- [x] 拒绝确认对话框（"Are you sure you want to reject..."）
+- [x] 拒绝结果显示区域（显示拒绝者和时间）
+- [x] 提案统计更新（Rejected计数）
+- [x] 按钮状态管理（防止重复操作）
+
+**第八点五阶段额外完成项：**
+- [x] 修复API参数传递问题（从query parameter改为request body）
+- [x] 完整的拒绝审计日志（who, when的完整记录）
+- [x] 角色权限检查（只有Manager可以拒绝）
+- [x] UI状态立即更新（拒绝后按钮消失，状态变更）
+- [x] 统计数字实时更新（Pending减少，Rejected增加）
+
 ### **第九阶段：AI模型预测准确性修复** ⚠️ **Phase C (修复中)**
 
 **问题诊断:**
