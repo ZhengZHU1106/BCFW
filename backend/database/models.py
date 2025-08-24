@@ -98,6 +98,7 @@ class ExecutionLog(Base):
     
     # 执行信息
     action_type = Column(String(50), nullable=False, comment='执行动作：block/unblock/auto_block')
+    execution_type = Column(String(20), default='auto', comment='执行类型：auto/manual')
     target_ip = Column(String(45), comment='目标IP')
     threat_type = Column(String(100), comment='威胁类型')
     confidence = Column(Float, comment='置信度')
@@ -122,6 +123,7 @@ class ExecutionLog(Base):
             'id': self.id,
             'proposal_id': self.proposal_id,
             'action_type': self.action_type,
+            'execution_type': self.execution_type,
             'target_ip': self.target_ip,
             'threat_type': self.threat_type,
             'confidence': self.confidence,
@@ -162,6 +164,9 @@ class ThreatDetectionLog(Base):
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
+        # 计算status字段
+        status = self._compute_status()
+        
         return {
             'id': self.id,
             'threat_type': self.threat_type,
@@ -173,9 +178,23 @@ class ThreatDetectionLog(Base):
             'action_taken': self.action_taken,
             'proposal_id': self.proposal_id,
             'execution_log_id': self.execution_log_id,
+            'status': status,  # 新增计算的status字段
             'detected_at': self.detected_at.isoformat() if self.detected_at else None,
             'detection_data': self.detection_data
         }
+    
+    def _compute_status(self) -> str:
+        """计算威胁检测的处理状态"""
+        if self.execution_log_id:
+            return "executed"
+        elif self.action_taken == "automatic_block":
+            return "executed"
+        elif self.proposal_id:
+            return "proposal_created"
+        elif self.action_taken == "manual_alert":
+            return "awaiting_decision"
+        else:
+            return "detected"
 
 class RewardPool(Base):
     """奖金池模型"""

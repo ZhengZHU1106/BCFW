@@ -143,8 +143,8 @@
                   <code class="ip-address">{{ log.target_ip }}</code>
                 </td>
                 <td>
-                  <span class="execution-type badge" :class="getExecutionClass(log.execution_type)">
-                    {{ getExecutionText(log.execution_type) }}
+                  <span class="execution-type badge" :class="getExecutionClass(log.execution_type || 'auto')">
+                    {{ getExecutionText(log.execution_type || 'auto') }}
                   </span>
                 </td>
                 <td>
@@ -201,16 +201,25 @@ const todayLogs = computed(() => {
 
 const autoExecuted = computed(() => {
   if (logType.value === 'detections') {
-    return logs.value.filter(log => log.response_level === 'auto').length
+    // 计算自动响应的检测数量
+    return logs.value.filter(log => 
+      log.response_level === 'automatic_response' || 
+      log.action_taken === 'automatic_block'
+    ).length
   } else {
+    // 执行日志中的自动执行数量
     return logs.value.filter(log => log.execution_type === 'auto').length
   }
 })
 
 const manualApproved = computed(() => {
   if (logType.value === 'detections') {
-    return logs.value.filter(log => log.status === 'approved').length
+    // 计算手动批准的提案数量 - 有proposal_id且已执行的威胁
+    return logs.value.filter(log => 
+      log.proposal_id && (log.status === 'executed' || log.status === 'approved')
+    ).length
   } else {
+    // 执行日志中的手动批准执行数量
     return logs.value.filter(log => log.execution_type === 'manual').length
   }
 })
@@ -296,20 +305,20 @@ const getConfidenceClass = (confidence) => {
 
 const getResponseClass = (level) => {
   const mapping = {
-    'auto': 'badge-success',
-    'auto_proposal': 'badge-info',
-    'manual': 'badge-warning',
-    'silent': 'badge-secondary'
+    'automatic_response': 'badge-success',
+    'auto_create_proposal': 'badge-info', 
+    'manual_decision_alert': 'badge-warning',
+    'silent_logging': 'badge-secondary'
   }
   return mapping[level] || 'badge-secondary'
 }
 
 const getResponseText = (level) => {
   const mapping = {
-    'auto': 'Auto Response',
-    'auto_proposal': 'Auto Proposal',
-    'manual': 'Manual Decision',
-    'silent': 'Silent Log'
+    'automatic_response': 'Auto Response',
+    'auto_create_proposal': 'Auto Proposal',
+    'manual_decision_alert': 'Manual Decision',
+    'silent_logging': 'Silent Log'
   }
   return mapping[level] || 'Unknown'
 }
@@ -319,7 +328,9 @@ const getStatusClass = (status) => {
     'detected': 'badge-warning',
     'executed': 'badge-success',
     'proposal_created': 'badge-info',
-    'approved': 'badge-success'
+    'awaiting_decision': 'badge-warning',
+    'approved': 'badge-success',
+    'rejected': 'badge-danger'
   }
   return mapping[status] || 'badge-secondary'
 }
@@ -329,7 +340,9 @@ const getStatusText = (status) => {
     'detected': 'Detected',
     'executed': 'Executed',
     'proposal_created': 'Proposal Created',
-    'approved': 'Approved'
+    'awaiting_decision': 'Awaiting Decision',
+    'approved': 'Approved',
+    'rejected': 'Rejected'
   }
   return mapping[status] || 'Unknown'
 }

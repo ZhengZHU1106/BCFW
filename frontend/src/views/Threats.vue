@@ -66,14 +66,22 @@
               <th>Time</th>
               <th>Threat Type</th>
               <th>Target IP</th>
-              <th>Confidence</th>
+              <th>
+                Confidence
+                <button 
+                  @click="showConfidenceExplanation = true"
+                  class="confidence-info-btn"
+                  title="Learn how confidence scores are calculated"
+                >
+                  ℹ️
+                </button>
+              </th>
               <th>Response Level</th>
               <th>Status</th>
-              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="threat in threats" :key="threat.id">
+            <tr v-for="threat in threats" :key="threat.id" @click="showThreatDetails(threat)" class="threat-row">
               <td>{{ formatTime(threat.detected_at) }}</td>
               <td>
                 <span class="threat-type">{{ threat.true_label }}</span>
@@ -96,21 +104,26 @@
                   {{ getStatusText(threat.status) }}
                 </span>
               </td>
-              <td>
-                <button 
-                  v-if="canCreateProposal(threat)" 
-                  @click="createProposal(threat)"
-                  class="btn btn-primary btn-sm"
-                  :disabled="threat.creating"
-                >
-                  {{ threat.creating ? 'Creating...' : 'Create Proposal' }}
-                </button>
-              </td>
             </tr>
           </tbody>
         </table>
       </div>
     </div>
+
+    <!-- Confidence Explanation Modal -->
+    <ConfidenceExplanationModal 
+      v-if="showConfidenceExplanation"
+      @close="showConfidenceExplanation = false"
+    />
+    
+    <!-- Threat Details Modal -->
+    <ThreatDetailsModal 
+      v-if="selectedThreat"
+      :threat="selectedThreat"
+      :current-role="currentRole"
+      @close="selectedThreat = null"
+      @create-proposal="handleCreateProposal"
+    />
   </div>
 </template>
 
@@ -118,6 +131,8 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { systemAPI } from '@/api/system'
 import ThreatAlert from '@/components/ThreatAlert.vue'
+import ConfidenceExplanationModal from '@/components/ConfidenceExplanationModal.vue'
+import ThreatDetailsModal from '@/components/ThreatDetailsModal.vue'
 
 // Threat data
 const threats = ref([])
@@ -134,6 +149,10 @@ const threatStats = ref({
 
 // Current user role
 const currentRole = ref('operator')
+
+// Modal control
+const showConfidenceExplanation = ref(false)
+const selectedThreat = ref(null)
 
 // Timer
 let refreshTimer = null
@@ -221,6 +240,17 @@ const updateThreatStats = () => {
   threatStats.value = stats
 }
 
+// Show threat details modal
+const showThreatDetails = (threat) => {
+  selectedThreat.value = threat
+}
+
+// Handle create proposal from modal
+const handleCreateProposal = async (threat) => {
+  await createProposal(threat)
+  selectedThreat.value = null // Close modal after creating proposal
+}
+
 // Create proposal
 const createProposal = async (threat) => {
   if (threat.creating) return
@@ -250,14 +280,7 @@ const createProposal = async (threat) => {
   }
 }
 
-// Check if proposal can be created
-const canCreateProposal = (threat) => {
-  // Check if current role is an operator role (operator_0, operator_1, etc.)
-  const isOperator = currentRole.value.startsWith('operator')
-  return isOperator && 
-         threat.response_level === 'manual_decision_alert' && 
-         threat.status === 'detected'
-}
+// Note: canCreateProposal logic moved to ThreatDetailsModal component
 
 // Get confidence level style
 const getConfidenceClass = (confidence) => {
@@ -294,7 +317,9 @@ const getStatusClass = (status) => {
     'detected': 'badge-warning',
     'executed': 'badge-success',
     'proposal_created': 'badge-info',
-    'approved': 'badge-success'
+    'awaiting_decision': 'badge-warning',
+    'approved': 'badge-success',
+    'rejected': 'badge-danger'
   }
   return mapping[status] || 'badge-secondary'
 }
@@ -305,7 +330,9 @@ const getStatusText = (status) => {
     'detected': 'Detected',
     'executed': 'Executed',
     'proposal_created': 'Proposal Created',
-    'approved': 'Approved'
+    'awaiting_decision': 'Awaiting Decision',
+    'approved': 'Approved',
+    'rejected': 'Rejected'
   }
   return mapping[status] || 'Unknown'
 }
@@ -484,5 +511,33 @@ onUnmounted(() => {
 .no-threats p {
   margin: 0;
   font-size: 1.1rem;
+}
+
+/* Confidence info button */
+.confidence-info-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+  margin-left: 0.5rem;
+  padding: 0.2rem;
+  border-radius: 3px;
+  opacity: 0.7;
+  transition: opacity 0.2s ease;
+}
+
+.confidence-info-btn:hover {
+  opacity: 1;
+  background-color: #f8f9fa;
+}
+
+/* Clickable threat rows */
+.threat-row {
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.threat-row:hover {
+  background-color: #f8f9fa;
 }
 </style>

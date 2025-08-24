@@ -127,6 +127,7 @@ class ThreatDetectionService:
         """执行自动响应"""
         execution_log = ExecutionLog(
             action_type="auto_block",
+            execution_type="auto",
             target_ip=target_ip,
             threat_type=detection_result['predicted_class'],
             confidence=detection_result['confidence'],
@@ -335,6 +336,7 @@ class ProposalService:
             execution_log = ExecutionLog(
                 proposal_id=proposal.id,
                 action_type=proposal.action_type,
+                execution_type="manual",
                 target_ip=proposal.target_ip,
                 threat_type=proposal.threat_type,
                 confidence=proposal.confidence,
