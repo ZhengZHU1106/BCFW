@@ -245,41 +245,42 @@ TODO 行动文档
 - [x] UI状态立即更新（拒绝后按钮消失，状态变更）
 - [x] 统计数字实时更新（Pending减少，Rejected增加）
 
-### **第九阶段：AI模型预测准确性修复** ⚠️ **Phase C (修复中)**
+### **第九阶段：AI模型预测准确性修复** ✅ **Phase C (已完成)**
 
 **问题诊断:**
 - ✅ 确认模型训练本身成功（99.62%准确率）
-- ✅ 识别问题根源：模型架构重建不完整导致权重加载失败
-- ✅ 发现模型使用随机权重预测，导致所有攻击被误判为"Benign"
+- ✅ 识别严重系统bug：显示true_label而非模型预测结果
+- ✅ 发现services.py中注释承认"使用true_label因为模型还有问题"
 
-**Phase C.1: 模型架构完整性修复** 🔄 **修复中**
-- [ ] 将training.ipynb中的完整Ensemble_Hybrid架构复制到model_loader.py (进行中)
-- [ ] 确保所有组件完全一致：ResidualBlock、SelfAttentionBranch、FeatureInteractionBranch
-- [ ] 修复参数数量匹配（训练时355,494参数）
-- [ ] 验证模型结构与训练时一致
+**Phase C.1: 新模型架构集成** ✅ **已完成**
+- [x] 成功集成HierarchicalTransformerEnhancedEnsembleModel新架构
+- [x] 升级特征维度从64维到77维，匹配新数据格式
+- [x] 实现两阶段分类：二分类(Benign/Malicious) → 多分类(6恶意类别)
+- [x] 集成多尺度注意力机制和不确定性量化
 
-**Phase C.2: 权重加载机制修复** ⏳ **待修复**
-- [ ] 修复state_dict键名匹配问题
-- [ ] 实现权重加载验证机制
-- [ ] 添加权重加载成功/失败的明确日志
-- [ ] 确保模型权重正确加载而非使用随机初始化
+**Phase C.2: 关键Bug修复** ✅ **已完成**
+- [x] 修复services.py中threat_type使用true_label的严重错误
+- [x] 改为使用模型预测结果predicted_class
+- [x] 解决JSON序列化numpy.float32类型问题
+- [x] 修复feature维度不匹配和预处理重复问题
 
-**Phase C.3: 预测准确性验证** ⏳ **待验证**
-- [ ] 创建模型预测准确性测试脚本
-- [ ] 验证模型能正确预测各种攻击类型
-- [ ] 确保置信度分布合理（不再全部预测为Benign）
-- [ ] 测试端到端预测流程
+**Phase C.3: 数据处理优化** ✅ **已完成**
+- [x] 使用新的77维推理数据/Users/zane/Desktop/BCFW/scripts/抽取脚本新.ipynb
+- [x] 优化预处理流程，避免双重标准化
+- [x] 实现is_preprocessed标志支持已预处理数据
+- [x] 完善不同攻击类型的均衡采样(130 Benign + 80 attacks)
 
-**Phase C.4: 前端显示优化** ✅
-- [x] 验证前端能正确显示各种攻击类型
-- [x] 确保威胁类型显示准确（显示true_label而非错误的predicted_class）
-- [x] 测试攻击模拟和威胁记录的正确性
+**Phase C.4: 端到端验证** ✅ **已完成**
+- [x] Playwright自动化测试验证模型正确预测
+- [x] 确认DoS攻击检测置信度96%，DDoS攻击检测97.9%
+- [x] 验证前端正确显示模型预测结果而非训练标签
+- [x] 测试不同威胁类型的准确识别和提案创建
 
-**预期结果:**
-- 模型预测准确率恢复到99%+水平
-- 正确识别各种攻击类型（SSH-Patator、DoS Hulk、DDoS等）
-- 置信度分布合理，不再全部预测为"Benign"
-- 前端正确显示真实攻击类型并创建对应提案
+**实际成果:**
+- ✅ 模型预测准确率恢复，正确识别各种攻击类型
+- ✅ 置信度分布合理，不再误判为"Benign" 
+- ✅ 新HierarchicalTransformerEnhancedEnsembleModel成功替代旧模型
+- ✅ 系统现在展示真实的AI预测结果，具备实际威胁检测能力
 
 ### **第九A阶段：Docker容器化部署** ✅ **完成 (2天)**
 

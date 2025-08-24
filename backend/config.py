@@ -34,6 +34,10 @@ GANACHE_CONFIG = {
 
 # AI 模型配置
 AI_MODEL_CONFIG = {
+    # 新的分层Transformer模型路径
+    "new_model_package_dir": MODEL_PACKAGE_DIR / "model",
+    
+    # 旧的模型文件（保留用于数据兼容性）
     "model_file": MODEL_PACKAGE_DIR / "model.pth",
     "scaler_file": MODEL_PACKAGE_DIR / "scaler.pkl",
     "feature_selector_file": MODEL_PACKAGE_DIR / "feature_selector.pkl",

@@ -9,14 +9,31 @@ import numpy as np
 from pathlib import Path
 import logging
 from typing import Dict, List, Tuple, Optional
-from ..config import AI_MODEL_CONFIG, THREAT_THRESHOLDS
+try:
+    from ..config import AI_MODEL_CONFIG, THREAT_THRESHOLDS
+except ImportError:
+    # 处理直接运行时的导入问题
+    import sys
+    import os
+    sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+    from config import AI_MODEL_CONFIG, THREAT_THRESHOLDS
+
+# 导入新的分层Transformer模型
+import sys
+sys.path.append(str(AI_MODEL_CONFIG['new_model_package_dir']))
+from model_loader import HierarchicalTransformerIDSLoader
 
 logger = logging.getLogger(__name__)
 
 class ThreatDetectionModel:
-    """威胁检测模型管理器"""
+    """威胁检测模型管理器 - 使用新的分层Transformer模型"""
     
     def __init__(self):
+        # 新模型相关属性
+        self.transformer_loader = None
+        self.new_model_info = None
+        
+        # 兼容性属性（保持接口一致）
         self.model = None
         self.scaler = None
         self.feature_selector = None
@@ -24,30 +41,51 @@ class ThreatDetectionModel:
         self.model_info = None
         self.selected_features = None
         self.inference_data = None
-        self._load_all_components()
+        
+        self._load_new_transformer_model()
     
-    def _load_all_components(self):
-        """加载所有模型组件"""
+    def _load_new_transformer_model(self):
+        """加载新的分层Transformer模型"""
         try:
-            logger.info("🤖 开始加载AI模型组件...")
+            logger.info("🤖 开始加载新的分层Transformer模型...")
             
-            # 加载预处理组件先（需要用于模型验证）
-            self._load_preprocessors()
+            # 加载新的Transformer模型
+            model_package_path = str(AI_MODEL_CONFIG['new_model_package_dir'])
+            self.transformer_loader = HierarchicalTransformerIDSLoader(model_package_path)
             
-            # 加载模型信息和特征
-            self._load_metadata()
+            # 获取模型信息
+            self.new_model_info = self.transformer_loader.get_model_info()
             
-            # 加载PyTorch模型（最后加载，因为需要验证）
-            self._load_pytorch_model()
+            # 为了兼容性，设置旧的接口属性
+            self._setup_compatibility_attributes()
             
-            # 加载推理数据
+            # 加载推理数据（可能需要转换维度）
             self._load_inference_data()
             
-            logger.info("✅ AI模型组件加载完成")
+            logger.info("✅ 新的分层Transformer模型加载完成")
+            logger.info(f"   模型: {self.new_model_info['model_name']} v{self.new_model_info['model_version']}")
+            logger.info(f"   二分类准确率: {self.new_model_info['performance']['binary_stage']['accuracy']:.4f}")
+            logger.info(f"   多分类准确率: {self.new_model_info['performance']['multi_stage']['accuracy']:.4f}")
             
         except Exception as e:
-            logger.error(f"❌ AI模型加载失败: {e}")
+            logger.error(f"❌ 分层Transformer模型加载失败: {e}")
             raise
+    
+    def _setup_compatibility_attributes(self):
+        """设置兼容性属性以保持现有接口"""
+        # 构造兼容的model_info
+        self.model_info = {
+            'classes': (['Benign'] + self.new_model_info['classes']['multi']),  # 7类系统
+            'num_classes': 7,
+            'model_name': self.new_model_info['model_name'],
+            'architecture': 'HierarchicalTransformer'
+        }
+        
+        # 构造兼容的selected_features（使用新模型的77个特征）
+        self.selected_features = self.new_model_info['features']['feature_names']
+        
+        logger.info(f"✅ 设置兼容性接口: {len(self.model_info['classes'])}类系统")
+        logger.info(f"   威胁类别: {', '.join(self.model_info['classes'])}")
     
     def _load_pytorch_model(self):
         """加载PyTorch模型并验证权重加载"""
@@ -408,8 +446,22 @@ class ThreatDetectionModel:
         """加载推理测试数据"""
         try:
             data_path = AI_MODEL_CONFIG['inference_data_file']
-            self.inference_data = torch.load(data_path, map_location='cpu')
-            logger.info(f"✅ 推理数据加载成功: {len(self.inference_data)}个真实样本")
+            loaded_data = torch.load(data_path, map_location='cpu')
+            
+            # 检查数据格式
+            if isinstance(loaded_data, dict) and 'features' in loaded_data:
+                # 新格式：包含features, labels, class_names
+                self.inference_data = loaded_data['features']
+                self.inference_labels = loaded_data['labels'] 
+                self.inference_class_names = loaded_data['class_names']
+                logger.info(f"✅ 新格式推理数据加载成功: {len(self.inference_data)}个样本")
+                logger.info(f"   类别: {', '.join(self.inference_class_names)}")
+            else:
+                # 旧格式：直接是tensor
+                self.inference_data = loaded_data
+                self.inference_labels = None
+                self.inference_class_names = None
+                logger.info(f"✅ 旧格式推理数据加载成功: {len(self.inference_data)}个样本")
                 
         except Exception as e:
             logger.error(f"❌ 无法加载推理数据: {e}")
@@ -437,78 +489,220 @@ class ThreatDetectionModel:
         return shuffled_labels
     
     def get_random_attack_sample(self) -> Tuple[np.ndarray, str]:
-        """随机获取一个攻击样本"""
+        """随机获取一个攻击样本 - 使用新的推理数据格式"""
         if self.inference_data is None:
             raise RuntimeError("推理数据未加载")
         
-        # 获取真实标签映射
-        true_labels = self._get_true_labels()
+        if self.inference_labels is not None and self.inference_class_names is not None:
+            # 新格式数据：使用真实标签
+            # 找到所有非Benign的攻击样本
+            attack_indices = []
+            for i, label_idx in enumerate(self.inference_labels):
+                class_name = self.inference_class_names[label_idx]
+                if class_name != 'Benign':
+                    attack_indices.append(i)
+            
+            if not attack_indices:
+                raise RuntimeError("没有找到攻击样本")
+            
+            # 随机选择一个攻击样本
+            sample_idx = np.random.choice(attack_indices)
+            true_label_idx = self.inference_labels[sample_idx].item()
+            true_label = self.inference_class_names[true_label_idx]
+            
+            # 映射到新的7类系统
+            label_mapping = {
+                'Bot': 'Bot',
+                'Brute_Force': 'Brute_Force', 
+                'DDoS': 'DDoS',
+                'DoS': 'DoS',
+                'PortScan': 'PortScan',
+                'Web Attack  Brute Force': 'Web_Attack',
+                'Web Attack  Sql Injection': 'Web_Attack', 
+                'Web Attack  XSS': 'Web_Attack'
+            }
+            mapped_label = label_mapping.get(true_label, 'Web_Attack')
+            
+        else:
+            # 旧格式数据：使用旧的标签重建逻辑
+            true_labels = self._get_true_labels_new_system()
+            attack_indices = [i for i, label in enumerate(true_labels) if label != 'Benign']
+            
+            if not attack_indices:
+                raise RuntimeError("没有找到攻击样本")
+            
+            sample_idx = np.random.choice(attack_indices)
+            mapped_label = true_labels[sample_idx]
         
-        # 找到所有攻击样本的索引
-        attack_indices = [i for i, label in enumerate(true_labels) if label != 'Benign']
-        
-        if not attack_indices:
-            raise RuntimeError("没有找到攻击样本")
-        
-        # 随机选择一个攻击样本
-        sample_idx = np.random.choice(attack_indices)
-        true_label = true_labels[sample_idx]
-        
-        # 提取特征（直接使用真实的inference_data.pt tensor）
+        # 提取特征
         features = self.inference_data[sample_idx].numpy()
         
         # 确保features是1D数组
         if features.ndim > 1:
             features = features.flatten()
         
-        return features, true_label
+        return features, mapped_label
+    
+    def _get_true_labels_new_system(self) -> List[str]:
+        """获取真实标签映射，转换到新的7类系统"""
+        # 原来的12类标签映射
+        old_labels = self._get_true_labels()
+        
+        # 12类到7类的映射关系
+        label_mapping = {
+            'Benign': 'Benign',
+            'Bot': 'Bot',
+            'DDoS': 'DDoS',
+            'DoS GoldenEye': 'DoS',
+            'DoS Hulk': 'DoS', 
+            'DoS Slowhttptest': 'DoS',
+            'DoS slowloris': 'DoS',
+            'FTP-Patator': 'Brute_Force',
+            'SSH-Patator': 'Brute_Force',
+            'PortScan': 'PortScan',
+            'Web Attack  Brute Force': 'Web_Attack',
+            'Rare_Attack': 'Web_Attack'  # 归类为Web攻击
+        }
+        
+        # 转换标签
+        new_labels = [label_mapping.get(label, 'Web_Attack') for label in old_labels]
+        return new_labels
     
     def predict_threat(self, features: np.ndarray, is_preprocessed: bool = False, strategy: str = "original") -> Dict:
-        """执行威胁预测"""
+        """执行威胁预测 - 使用分层Transformer模型"""
         try:
-            # 检查是否为已预处理数据
-            if is_preprocessed:
+            # 检查数据是否已预处理
+            if is_preprocessed and features.shape[-1] == 77:
+                # 新的77维已预处理数据，直接转换为tensor，跳过模型内部预处理
                 processed_features = features
-                logger.debug("使用已预处理数据，跳过预处理步骤")
+                logger.debug("使用77维已预处理数据，跳过模型预处理")
+                
+                # 确保是2D数组格式
+                if processed_features.ndim == 1:
+                    processed_features = processed_features.reshape(1, -1)
+                    
+                logger.debug(f"输入特征维度: {processed_features.shape}")
+                
+                # 直接调用模型，跳过预处理步骤
+                import torch
+                with torch.no_grad():
+                    input_tensor = torch.FloatTensor(processed_features).to(self.transformer_loader.device)
+                    
+                    # 二分类预测
+                    binary_logits, binary_uncertainty = self.transformer_loader.binary_model(input_tensor, return_uncertainty=True)
+                    binary_probs = torch.nn.functional.softmax(binary_logits, dim=1)
+                    binary_preds = torch.argmax(binary_probs, dim=1)
+                    
+                    # 多分类预测（仅恶意流量）
+                    multi_probs = torch.zeros(len(processed_features), len(self.new_model_info['classes']['multi']))
+                    multi_uncertainty = torch.zeros(len(processed_features), 1)
+                    
+                    malicious_mask = binary_preds == 1
+                    if malicious_mask.sum() > 0:
+                        malicious_data = input_tensor[malicious_mask]
+                        multi_logits, multi_unc = self.transformer_loader.multi_model(malicious_data, return_uncertainty=True)
+                        multi_probs[malicious_mask] = torch.nn.functional.softmax(multi_logits, dim=1)
+                        multi_uncertainty[malicious_mask] = multi_unc
+                    
+                    prediction_result = {
+                        'binary': {
+                            'predictions': binary_preds.cpu().numpy(),
+                            'probabilities': binary_probs.cpu().numpy(),
+                            'uncertainty': binary_uncertainty.cpu().numpy(),
+                            'classes': self.new_model_info['classes']['binary']
+                        },
+                        'multi': {
+                            'probabilities': multi_probs.cpu().numpy(),
+                            'uncertainty': multi_uncertainty.cpu().numpy(),
+                            'classes': self.new_model_info['classes']['multi']
+                        },
+                        'metadata': {
+                            'model_name': self.new_model_info['model_name'],
+                            'num_samples': len(processed_features)
+                        }
+                    }
             else:
-                # 对原始数据进行预处理
-                processed_features = self._preprocess_features(features)
-                logger.debug("对原始数据进行预处理")
+                # 旧的64维数据或需要维度适配的数据
+                processed_features = self._adapt_feature_dimensions(features)
+                logger.debug("应用维度适配和预处理")
+                
+                # 确保是2D数组格式
+                if processed_features.ndim == 1:
+                    processed_features = processed_features.reshape(1, -1)
+                    
+                logger.debug(f"输入特征维度: {processed_features.shape}")
+                
+                # 使用新的分层模型进行预测（包含内部预处理）
+                prediction_result = self.transformer_loader.predict(processed_features)
             
-            # 模型推理
-            with torch.no_grad():
-                input_tensor = torch.FloatTensor(processed_features).unsqueeze(0)
-                outputs = self.model(input_tensor)
-                probabilities = torch.softmax(outputs, dim=1)
+            # 分层预测逻辑
+            binary_pred = prediction_result['binary']['predictions'][0]  # 0=Benign, 1=Malicious
+            binary_probs = prediction_result['binary']['probabilities'][0]  # [benign_prob, malicious_prob]
+            binary_confidence = max(binary_probs)
+            
+            if binary_pred == 0:  # Benign
+                predicted_class = "Benign"
+                confidence = binary_probs[0]  # Benign的概率
+                all_probs = [binary_probs[0]] + [0.0] * 6  # Benign + 6个攻击类型都是0
+            else:  # Malicious
+                # 多分类阶段：获取最可能的攻击类型
+                multi_probs = prediction_result['multi']['probabilities'][0]  # 6类攻击概率
+                max_attack_idx = np.argmax(multi_probs)
+                predicted_class = self.new_model_info['classes']['multi'][max_attack_idx]
+                confidence = multi_probs[max_attack_idx] * binary_probs[1]  # 组合置信度
                 
-                # 应用改进的决策策略
-                predicted_class_idx, confidence, predicted_class = self._apply_improved_decision_strategy(probabilities[0], strategy)
-                
-                # 记录原始最高概率预测供对比
-                original_predicted_idx = torch.argmax(probabilities, dim=1).item()
-                original_predicted_class = self.label_encoder.inverse_transform([original_predicted_idx])[0]
-                
-                if predicted_class != original_predicted_class:
-                    logger.info(f"决策策略调整: 原始预测={original_predicted_class}, 调整后={predicted_class}")
-                
-                # 调试信息：记录所有类别概率
-                logger.debug(f"预测结果: {predicted_class} (索引: {predicted_class_idx}, 置信度: {confidence:.4f})")
-                logger.debug(f"所有类别概率: {dict(zip(self.model_info['classes'], probabilities[0].tolist()))}")
-                
-                # 确定响应级别
-                response_level = self._determine_response_level(confidence)
-                
-                return {
-                    "predicted_class": predicted_class,
-                    "confidence": confidence,
-                    "response_level": response_level,
-                    "all_probabilities": probabilities[0].tolist(),
-                    "class_names": self.model_info['classes']
+                # 构造完整概率分布 [Benign=0, Attack1, Attack2, ...]
+                all_probs = [0.0] + multi_probs.tolist()
+            
+            # 确定响应级别
+            response_level = self._determine_response_level(confidence)
+            
+            logger.debug(f"分层预测结果: 二分类={binary_pred}, 最终类别={predicted_class}, 置信度={confidence:.4f}")
+            
+            return {
+                "predicted_class": predicted_class,
+                "confidence": float(confidence),  # 转换为Python float
+                "response_level": response_level,
+                "all_probabilities": [float(p) for p in all_probs],  # 转换为Python float列表
+                "class_names": self.model_info['classes'],
+                "hierarchical_info": {
+                    "binary_prediction": "Malicious" if binary_pred == 1 else "Benign",
+                    "binary_confidence": float(binary_confidence),  # 转换为Python float
+                    "attack_type": predicted_class if binary_pred == 1 else None
                 }
+            }
                 
         except Exception as e:
             logger.error(f"❌ 威胁预测失败: {e}")
             raise
+    
+    def _adapt_feature_dimensions(self, features: np.ndarray) -> np.ndarray:
+        """将64维特征适配为77维特征"""
+        if features.shape[-1] == 77:
+            return features  # 已经是77维
+        elif features.shape[-1] == 64:
+            # 从64维扩展到77维：添加13个零值特征
+            if features.ndim == 1:
+                padding = np.zeros(13)
+                return np.concatenate([features, padding])
+            else:
+                padding = np.zeros((features.shape[0], 13))
+                return np.concatenate([features, padding], axis=1)
+        else:
+            # 其他维度：截断或填充到77维
+            target_dim = 77
+            if features.ndim == 1:
+                if features.shape[0] > target_dim:
+                    return features[:target_dim]
+                else:
+                    padding = np.zeros(target_dim - features.shape[0])
+                    return np.concatenate([features, padding])
+            else:
+                if features.shape[1] > target_dim:
+                    return features[:, :target_dim]
+                else:
+                    padding = np.zeros((features.shape[0], target_dim - features.shape[1]))
+                    return np.concatenate([features, padding], axis=1)
     
     def _preprocess_features(self, features: np.ndarray) -> np.ndarray:
         """预处理特征数据 - 修复维度不匹配问题"""
@@ -648,7 +842,7 @@ class ThreatDetectionModel:
             raise
     
     def get_model_info(self) -> Dict:
-        """获取模型信息"""
+        """获取模型信息 - 返回新的7类系统信息"""
         # 处理 inference_data 的长度计算
         inference_samples = 0
         if self.inference_data is not None:
@@ -664,7 +858,17 @@ class ThreatDetectionModel:
             "feature_count": len(self.selected_features) if self.selected_features else 0,
             "threat_classes": self.model_info['classes'] if self.model_info else [],
             "thresholds": THREAT_THRESHOLDS,
-            "inference_samples": inference_samples
+            "inference_samples": inference_samples,
+            "new_model_details": {
+                "architecture": "HierarchicalTransformer",
+                "binary_accuracy": self.new_model_info['performance']['binary_stage']['accuracy'],
+                "multi_accuracy": self.new_model_info['performance']['multi_stage']['accuracy'],
+                "input_features": self.new_model_info['architecture']['input_features'],
+                "hierarchical_classes": {
+                    "binary": self.new_model_info['classes']['binary'],
+                    "multi": self.new_model_info['classes']['multi']
+                }
+            }
         }
 
 # 全局模型实例
