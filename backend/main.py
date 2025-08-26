@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from backend.database.connection import init_database, get_db
 from backend.blockchain.web3_manager import init_web3_manager
-from backend.ai_module.model_loader import init_threat_model
+# AI模型已集成在服务层，无需单独初始化
 from backend.app.services import ThreatDetectionService, ProposalService, SystemInfoService, RewardPoolService
 
 # 配置日志
@@ -35,9 +35,8 @@ async def lifespan(app: FastAPI):
         logger.info("🔗 初始化Web3连接...")
         init_web3_manager()
         
-        # 初始化AI模型
-        logger.info("🤖 初始化AI模型...")
-        init_threat_model()
+        # AI模型已集成在服务层，会在首次调用时自动加载
+        logger.info("🤖 AI模型已集成在服务层，随时可用")
         
         # 初始化奖金池
         logger.info("💰 初始化奖金池...")

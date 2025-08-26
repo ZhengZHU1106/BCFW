@@ -18,8 +18,8 @@
     <div class="alert-body">
       <div class="threat-details">
         <div class="detail-item">
-          <span class="label">Threat Type:</span>
-          <span class="value threat-type">{{ threat.true_label || threat.threat_type }}</span>
+          <span class="label">Type:</span>
+          <span class="value threat-type">{{ threat.threat_type || threat.predicted_class }}</span>
         </div>
         <div class="detail-item">
           <span class="label">Source IP:</span>
@@ -79,6 +79,9 @@ let timerInterval = null
 
 // 计算属性
 const alertClass = computed(() => {
+  const threatType = props.threat.threat_type || props.threat.true_label
+  if (threatType === 'Benign') return 'alert-safe'
+  
   const confidence = props.threat.confidence
   if (confidence >= 0.9) return 'alert-critical'
   if (confidence >= 0.8) return 'alert-high'
@@ -87,6 +90,9 @@ const alertClass = computed(() => {
 })
 
 const alertIcon = computed(() => {
+  const threatType = props.threat.threat_type || props.threat.true_label
+  if (threatType === 'Benign') return '✅'
+  
   const confidence = props.threat.confidence
   if (confidence >= 0.9) return '🚨'
   if (confidence >= 0.8) return '🔥'
@@ -95,6 +101,9 @@ const alertIcon = computed(() => {
 })
 
 const alertTitle = computed(() => {
+  const threatType = props.threat.threat_type || props.threat.true_label
+  if (threatType === 'Benign') return 'Normal Traffic Detected'
+  
   const confidence = props.threat.confidence
   if (confidence >= 0.9) return 'Critical Threat Alert'
   if (confidence >= 0.8) return 'High Risk Threat Detected'
@@ -103,7 +112,12 @@ const alertTitle = computed(() => {
 })
 
 const alertDescription = computed(() => {
-  const type = props.threat.true_label || props.threat.threat_type
+  const type = props.threat.threat_type || props.threat.true_label
+  
+  if (type === 'Benign') {
+    return 'Normal network traffic detected, no security action required'
+  }
+  
   const descriptions = {
     'DDoS': 'Distributed Denial of Service attack detected, may cause service unavailability',
     'Brute Force': 'Brute force attack attempts detected, may compromise account security',
@@ -260,6 +274,11 @@ onUnmounted(() => {
 .alert-low {
   border-left-color: #28a745;
   background: linear-gradient(135deg, #f0fff4 0%, #ffffff 100%);
+}
+
+.alert-safe {
+  border-left-color: #20c997;
+  background: linear-gradient(135deg, #e8fffe 0%, #ffffff 100%);
 }
 
 .alert-header {

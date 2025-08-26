@@ -16,8 +16,12 @@
               <span class="value">{{ formatTime(threat.detected_at) }}</span>
             </div>
             <div class="detail-item">
-              <span class="label">Threat Type:</span>
-              <span class="value threat-type">{{ threat.true_label || threat.threat_type }}</span>
+              <span class="label">AI Prediction:</span>
+              <span class="value threat-type">{{ threat.threat_type }}</span>
+            </div>
+            <div class="detail-item" v-if="threat.true_label && threat.true_label !== threat.threat_type">
+              <span class="label">Ground Truth:</span>
+              <span class="value threat-type" style="color: #6c757d; font-style: italic;">{{ threat.true_label }}</span>
             </div>
             <div class="detail-item">
               <span class="label">Source IP:</span>

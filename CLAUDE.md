@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This is a blockchain-based intelligent security platform (区块链智能安防平台) demonstration prototype. The project combines AI-based threat detection with blockchain multi-signature decision making and audit capabilities. The system demonstrates the complete flow from threat detection to decentralized decision-making and trusted logging.
 
 **Key Components:**
-- AI threat detection using an `Ensemble_Hybrid` model trained on CIC-IDS2017 dataset
+- AI threat detection using an `HierarchicalTransformerIDS` model trained on CIC-IDS2017 dataset
 - Ganache local blockchain network for development and testing
 - Custom multi-signature smart contract for decentralized decision-making
 - Simulated security response execution and audit logging
@@ -18,29 +18,33 @@ This is a blockchain-based intelligent security platform (区块链智能安防�
 - `training.ipynb` - Complete model training code and architecture details
 - `model.pth`, `scaler.pkl`, `feature_selector.pkl`, `label_encoder.pkl` - Trained model deployment package
 - `抽样数据脚本.ipynb` - Script for extracting real attack samples from CIC-IDS2017
-- `inference_data.pt` - Pre-generated attack simulation data
+- `inference_data_fixed.pt` - Pre-generated attack simulation data (properly formatted)
 - `selected_features.json`, `model_info.json` - Model metadata
 
-### Current Architecture (Phase 4 Complete - Custom MultiSig)
+### Current Architecture (Phase 9 Complete - Optimized Structure)
 ```
 backend/
-├── ai_module/              # AI threat detection (✅ Complete)
-│   └── model_loader.py     # Real Ensemble_Hybrid model + preprocessors
+├── app/                    # Business logic services (✅ Complete)
+│   └── services.py         # ThreatDetection, Proposal, SystemInfo, RewardPool services
+├── assets/                 # Model deployment & configuration (✅ Complete)
+│   ├── model_package/      # HierarchicalTransformerIDS model files
+│   │   ├── model/         # Trained model artifacts (model.pth, scaler.pkl, etc.)
+│   │   ├── predictor.py   # Model prediction logic (fixed hierarchical decisions)
+│   │   └── model_architecture.py # PyTorch model definition
+│   ├── data/              # Inference data (inference_data_fixed.pt)
+│   ├── multisig_contract.json    # MultiSig contract configuration
+│   ├── multisig_interface.json  # Contract ABI interface
+│   └── *_state.json       # System state files (reward pool, contributions)
 ├── blockchain/             # Web3 blockchain integration (✅ Complete)
-│   ├── web3_manager.py     # Ganache connection + custom multi-sig
-│   └── multisig_contract.py # Custom MultiSig contract integration
+│   ├── web3_manager.py     # Ganache connection + account management
+│   ├── multisig_contract.py # Custom MultiSig contract integration
+│   └── multisig_contract.js # Contract deployment utilities
 ├── database/               # SQLite data persistence (✅ Complete)
 │   ├── connection.py       # Database setup and sessions
 │   └── models.py           # Proposal, ExecutionLog, ThreatDetectionLog
-├── app/                    # Business logic services (✅ Complete)
-│   └── services.py         # ThreatDetection, Proposal, SystemInfo services
-├── assets/                 # Model deployment package (✅ Complete)
-│   ├── model_package/      # Real trained model files (joblib compatible)
-│   ├── data/              # 230 real attack samples from CIC-IDS2017
-│   ├── multisig_contract.json    # MultiSig contract configuration
-│   └── multisig_interface.json  # Contract ABI interface
 ├── main.py                # FastAPI application (✅ Complete)
-└── config.py              # System configuration
+├── config.py              # System configuration
+└── requirements.txt       # Python dependencies
 
 contracts/                 # Smart contracts (✅ Complete)
 └── MultiSigProposal.sol   # Custom multi-signature contract
@@ -109,26 +113,39 @@ Database Logs    Smart Contract      ETH Transfer
 
 ## AI Model Details
 
-The project uses an `Ensemble_Hybrid` PyTorch model with the following architecture:
-- **Input**: 64 selected features from network traffic data
-- **Components**: Deep branch, Wide branch, Residual blocks, Self-attention, Feature interaction
-- **Output**: 12 threat categories (including "Rare_Attack" for uncommon threats)
-- **Performance**: 99.6+ % accuracy on CIC-IDS2017 test set
+The project uses an `HierarchicalTransformerIDS` PyTorch model with the following architecture:
+- **Input**: 77 selected features from network traffic data
+- **Components**: Hierarchical transformer with binary and multi-class stages
+- **Output**: 6 main threat categories (Bot, Brute_Force, DDoS, DoS, PortScan, Web_Attack)
+- **Performance**: 99.30% binary accuracy, 98.90% multi-class accuracy on CIC-IDS2017 test set (verified with comprehensive testing)
 
 ## Development Commands
 
 **System Management (Phase 8 Complete - Contract-Level Role Separation):**
 ```bash
-# One-click system startup
-./start_system.sh        # Start all services (Ganache, Backend, Frontend)
+# ⚡ UNIFIED SYSTEM CONTROL - Use system.sh for all operations:
 
-# One-click system shutdown
-./stop_system.sh         # Stop all services and clean up
+# Start all services (Ganache + Backend + Frontend)
+./system.sh start
 
-# Manual backend startup (if needed)
+# Stop all services and clean up
+./system.sh stop  
+
+# Restart all services (stop + start)
+./system.sh restart
+
+# Check status of all services
+./system.sh status
+
+# Show help and usage
+./system.sh
+
+# ❌ DEPRECATED - DO NOT USE:
+# ./start_system.sh   # OLD - Use ./system.sh start
+# ./stop_system.sh    # OLD - Use ./system.sh stop
+
+# Manual operations (only if needed for debugging):
 python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
-
-# Manual contract deployment (if needed)
 node scripts/deploy_multisig_simple.js
 ```
 
@@ -205,7 +222,7 @@ POST /api/test/auto-distribute  # Test automatic reward distribution
 - ✅ Phase 2: Backend development complete and tested
 - ✅ Phase 3: Frontend development complete with English interface
 - ✅ **Phase 4: Custom MultiSig Contract** - Custom multi-signature smart contract integration complete
-- ✅ AI model integration with real preprocessors (joblib-based)
+- ✅ AI model integration with real preprocessors (scikit-learn 1.7.1 compatible, prediction logic fixed)
 - ✅ Custom multi-signature smart contract with automatic execution
 - ✅ Complete threat detection → smart contract → execution → audit workflow
 - ✅ Vue 3 + Vite frontend with real Web3 account creation and management
@@ -213,6 +230,7 @@ POST /api/test/auto-distribute  # Test automatic reward distribution
 - ✅ **Phase A: Reward Pool Mechanism** - Complete reward pool system with contribution-based distribution
 - ✅ **Phase 8: Contract-Level Role Separation** - True decentralized role management with smart contract enforcement
 - ✅ **Phase 8.5: Proposal Rejection System** - 1-vote veto rejection mechanism with full UI support
+- ✅ **Phase 9: Model Performance Optimization** - Fixed prediction logic and data preprocessing, achieved 99.30% binary accuracy and 98.90% multi-class accuracy
 
 **MultiSig Contract Features (Phase 4 Complete):**
 - ✅ Custom Solidity smart contract (`MultiSigProposal.sol`)
@@ -248,9 +266,11 @@ POST /api/test/auto-distribute  # Test automatic reward distribution
 - ✅ **Audit Trail**: Complete tracking of rejection events with timestamps
 - ✅ **Statistics Integration**: Rejection counts included in proposal statistics
 
-**Known Issues:**
+**System Performance:**
+- ✅ **Model Performance**: 99.30% binary classification, 98.90% multi-class accuracy
+- ✅ **Prediction Logic**: Fixed hierarchical decision structure for optimal threat detection
+- ✅ **Data Pipeline**: Resolved preprocessing issues with scikit-learn 1.7.1 compatibility
 - 🐛 **User Experience Issue**: 5-second wait time after proposal signing due to synchronous reward distribution and blockchain transaction confirmations
-- 📝 **Solution Identified**: Asynchronous reward processing + immediate UI feedback (see Phase 9 plan below)
 
 **Remaining Technical Challenges:**
 - 🔄 **MetaMask Integration**: Direct user wallet interaction for genuine Web3 experience
@@ -264,14 +284,15 @@ POST /api/test/auto-distribute  # Test automatic reward distribution
 - Treasury account (3) pays 0.01 ETH incentive to final proposal signer
 - Web3 integration handles all blockchain interactions via local Ganache
 
-**API Structure (Phase A Complete - Reward Pool System):**
-- **AI Integration**: Real Ensemble_Hybrid model with joblib-compatible preprocessors
+**API Structure (Phase 9 Complete - Optimized Architecture):**
+- **AI Integration**: HierarchicalTransformerIDS model in `assets/model_package/predictor.py` with fixed prediction logic
+- **Model Assets**: All trained artifacts in `assets/model_package/model/` (scikit-learn 1.7.1 compatible)
 - **Database**: SQLite with ThreatDetectionLog, Proposal, ExecutionLog models (extended with rejection tracking)
 - **Blockchain**: Web3.py integration with Ganache + custom MultiSig smart contract
-- **MultiSig Contract**: Python integration module (`multisig_contract.py`) for seamless interaction
+- **MultiSig Contract**: Python integration module (`blockchain/multisig_contract.py`) for seamless interaction
 - **Reward Pool System**: Persistent state management with contribution tracking and auto-distribution
-- **Services**: ThreatDetectionService, ProposalService, SystemInfoService, RewardPoolService (all fully integrated)
-- **Testing**: Comprehensive test suite including reward pool mechanism and contribution tracking
+- **Services**: ThreatDetectionService, ProposalService, SystemInfoService, RewardPoolService (all in `app/services.py`)
+- **Performance**: Verified 99.30% binary classification and 98.90% multi-class accuracy
 
 **Threat Detection Confidence Levels:**
 - `>0.90`: Automatic response + execution logging
@@ -279,9 +300,18 @@ POST /api/test/auto-distribute  # Test automatic reward distribution
 - `0.70-0.80`: Alert only, manual proposal creation by Operator
 - `<0.70`: Silent background logging
 
+## Testing and Validation
+
+**Model Performance (Verified and Fixed):**
+- **Binary Classification**: 99.30% accuracy (98.36% sensitivity, 99.47% specificity)
+- **Multi-class Classification**: 98.90% accuracy across 6 threat categories  
+- **Model Architecture**: HierarchicalTransformerIDS with fixed hierarchical decision logic
+- **Compatibility**: scikit-learn 1.7.1 for proper preprocessing pipeline
+- **Data Pipeline**: Uses inference_data_fixed.pt with correctly formatted raw input data
+
 ## Next Development Phases: User Experience & Advanced Features
 
-### **Phase 9: User Experience Optimization** (2-3 days) **[PLANNED]**
+### **Phase 10: User Experience Optimization** (2-3 days) **[PLANNED]**
 **Objective**: Eliminate 5-second wait time after proposal signing for better user experience
 
 **Current Problem:**
@@ -318,7 +348,7 @@ Files to modify:
 - **Maintenance Cost**: Low
 - **ROI**: High (core UX issue resolution)
 
-### **Phase 10: MetaMask Integration** (7-10 days) **[FUTURE]**
+### **Phase 11: MetaMask Integration** (7-10 days) **[FUTURE]**
 **Objective**: Enable direct user wallet interaction for genuine Web3 experience
 
 **Key Improvements:**

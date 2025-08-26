@@ -178,10 +178,10 @@ const getConfidenceClass = (confidence) => {
 
 const getResponseText = (level) => {
   const mapping = {
-    'auto': 'Auto Response',
-    'auto_proposal': 'Auto Proposal',
-    'manual': 'Manual Decision',
-    'silent': 'Silent Log'
+    'automatic_response': 'Auto Response',
+    'auto_create_proposal': 'Auto Proposal',
+    'manual_decision_alert': 'Manual Decision',
+    'silent_logging': 'Silent Log'
   }
   return mapping[level] || 'Unknown'
 }
@@ -191,7 +191,9 @@ const getStatusText = (status) => {
     'detected': 'Detected',
     'executed': 'Executed',
     'proposal_created': 'Proposal Created',
-    'approved': 'Approved'
+    'awaiting_decision': 'Awaiting Decision',
+    'approved': 'Approved',
+    'rejected': 'Rejected'
   }
   return mapping[status] || 'Unknown'
 }

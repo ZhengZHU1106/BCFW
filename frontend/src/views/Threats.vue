@@ -43,6 +43,13 @@
             <div class="stat-label">Blocked</div>
           </div>
         </div>
+        <div class="stat-card card">
+          <div class="stat-icon normal">🛡️</div>
+          <div class="stat-info">
+            <div class="stat-value">{{ threatStats.benign }}</div>
+            <div class="stat-label">Normal Traffic</div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -64,7 +71,7 @@
           <thead>
             <tr>
               <th>Time</th>
-              <th>Threat Type</th>
+              <th>Type</th>
               <th>Target IP</th>
               <th>
                 Confidence
@@ -84,7 +91,7 @@
             <tr v-for="threat in threats" :key="threat.id" @click="showThreatDetails(threat)" class="threat-row">
               <td>{{ formatTime(threat.detected_at) }}</td>
               <td>
-                <span class="threat-type">{{ threat.true_label }}</span>
+                <span class="threat-type">{{ threat.threat_type }}</span>
               </td>
               <td>
                 <code class="ip-address">{{ threat.source_ip }}</code>
@@ -144,7 +151,8 @@ const threatStats = ref({
   high: 0,
   medium: 0,
   low: 0,
-  blocked: 0
+  blocked: 0,
+  benign: 0
 })
 
 // Current user role
@@ -168,10 +176,10 @@ const simulateAttack = async () => {
     // Extract data from nested structure
     const data = result.data || result
     
-    // Update latest threat - 使用true_label因为模型还有问题
+    // Update latest threat - 使用predicted_class保持与数据库一致
     latestThreat.value = {
       id: data.detection_id || Date.now(),
-      threat_type: data.threat_info?.true_label || 'Unknown',
+      threat_type: data.threat_info?.predicted_class || 'Unknown',
       true_label: data.threat_info?.true_label || 'Unknown',
       predicted_class: data.threat_info?.predicted_class || 'Unknown',
       source_ip: data.network_info?.source_ip || '192.168.1.100',
@@ -198,9 +206,8 @@ const refreshThreats = async () => {
   try {
     const result = await systemAPI.getDetectionLogs()
     if (result.success) {
-      // Filter out Benign entries since this is a threats page
+      // Show all detection records including normal traffic
       threats.value = result.data
-        .filter(threat => threat.threat_type !== 'Benign')
         .map(threat => ({
           ...threat,
           creating: false
@@ -220,16 +227,24 @@ const updateThreatStats = () => {
     high: 0,
     medium: 0,
     low: 0,
-    blocked: 0
+    blocked: 0,
+    benign: 0
   }
   
   threats.value.forEach(threat => {
-    if (threat.confidence > 0.8) {
-      stats.high++
-    } else if (threat.confidence > 0.5) {
-      stats.medium++
+    const threatType = threat.threat_type || threat.true_label
+    
+    if (threatType === 'Benign') {
+      stats.benign++
     } else {
-      stats.low++
+      // Only count confidence for actual threats
+      if (threat.confidence > 0.8) {
+        stats.high++
+      } else if (threat.confidence > 0.5) {
+        stats.medium++
+      } else {
+        stats.low++
+      }
     }
     
     if (threat.status === 'executed' || threat.status === 'approved') {
@@ -432,6 +447,10 @@ onUnmounted(() => {
 
 .stat-icon.success {
   background-color: #d4edda;
+}
+
+.stat-icon.normal {
+  background-color: #e3f2fd;
 }
 
 .stat-value {
