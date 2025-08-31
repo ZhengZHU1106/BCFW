@@ -94,6 +94,10 @@ class Web3Manager:
             accounts_info.append(self.get_account_info(role))
         return accounts_info
     
+    def get_account_addresses(self) -> Dict[str, str]:
+        """获取所有账户地址映射"""
+        return self.accounts.copy()
+    
     def get_network_info(self) -> Dict:
         """获取网络信息"""
         return {

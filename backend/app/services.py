@@ -177,11 +177,14 @@ def _add_compatibility_methods(model):
         confidence = result['confidence']
         
         # 确定响应级别
-        if confidence >= THREAT_THRESHOLDS["high_confidence"] and predicted_class != 'Benign':
+        if predicted_class == 'Benign':
+            # Benign流量始终是日志记录级别，不需要响应
+            response_level = "log_only"
+        elif confidence >= THREAT_THRESHOLDS["high_confidence"]:
             response_level = "automatic_response"
-        elif confidence >= THREAT_THRESHOLDS["medium_high"] and predicted_class != 'Benign':
+        elif confidence >= THREAT_THRESHOLDS["medium_high"]:
             response_level = "auto_create_proposal"
-        elif confidence >= THREAT_THRESHOLDS["medium_low"] and predicted_class != 'Benign':
+        elif confidence >= THREAT_THRESHOLDS["medium_low"]:
             response_level = "manual_decision_alert"
         else:
             response_level = "log_only"
@@ -358,13 +361,117 @@ class ThreatDetectionService:
 class ProposalService:
     def __init__(self):
         self.web3_manager = get_web3_manager()
-    # ...
+    
+    def get_pending_proposals(self, db: Session) -> List[Dict]:
+        """获取待处理的提案列表"""
+        proposals = db.query(Proposal).filter(Proposal.status == "pending").all()
+        return [proposal.to_dict() for proposal in proposals]
+    
+    def get_approved_proposals(self, db: Session) -> List[Dict]:
+        """获取已批准的提案列表"""
+        proposals = db.query(Proposal).filter(Proposal.status == "approved").all()
+        return [proposal.to_dict() for proposal in proposals]
+    
+    def get_rejected_proposals(self, db: Session) -> List[Dict]:
+        """获取已拒绝的提案列表"""
+        proposals = db.query(Proposal).filter(Proposal.status == "rejected").all()
+        return [proposal.to_dict() for proposal in proposals]
+    
+    def get_proposal_history(self, db: Session, limit: int = 50) -> List[Dict]:
+        """获取历史提案记录"""
+        proposals = db.query(Proposal).order_by(Proposal.created_at.desc()).limit(limit).all()
+        return [proposal.to_dict() for proposal in proposals]
+    
+    def sign_proposal(self, db: Session, proposal_id: int, signer_role: str) -> Dict:
+        """签名提案"""
+        proposal = db.query(Proposal).filter(Proposal.id == proposal_id).first()
+        if not proposal:
+            return {"success": False, "error": "Proposal not found"}
+        
+        # 模拟签名实现 - 正确处理JSON字段
+        from sqlalchemy.orm.attributes import flag_modified
+        
+        signed_by_list = proposal.signed_by if proposal.signed_by else []
+        
+        if signer_role not in signed_by_list:
+            signed_by_list.append(signer_role)
+            proposal.signed_by = signed_by_list
+            flag_modified(proposal, 'signed_by')  # 告诉SQLAlchemy JSON字段已修改
+            proposal.signatures_count = len(signed_by_list)
+            
+            # 如果达到阈值，自动批准
+            if proposal.signatures_count >= proposal.signatures_required:
+                proposal.status = "approved"
+                proposal.approved_at = datetime.utcnow()
+        
+        db.commit()
+        return {"success": True, "message": "Proposal signed successfully"}
+    
+    def reject_proposal(self, db: Session, proposal_id: int, manager_role: str) -> Dict:
+        """拒绝提案"""
+        proposal = db.query(Proposal).filter(Proposal.id == proposal_id).first()
+        if not proposal:
+            return {"success": False, "error": "Proposal not found"}
+        
+        if proposal.status != "pending":
+            return {"success": False, "error": "Proposal is not in pending status"}
+        
+        # 1-vote veto - 任何Manager都可以立即拒绝提案
+        proposal.status = "rejected"
+        proposal.rejected_at = datetime.utcnow()
+        proposal.rejected_by = manager_role
+        
+        db.commit()
+        return {"success": True, "message": "Proposal rejected successfully"}
+
 class SystemInfoService:
     def __init__(self):
         self.web3_manager = get_web3_manager()
         self.threat_model = get_threat_model()
-    # ...
+    
+    def get_system_status(self, db: Session) -> Dict:
+        """获取系统状态信息"""
+        try:
+            # 检查各个组件状态
+            ganache_connected = self.web3_manager.is_connected()
+            database_connected = True  # 如果到这里说明数据库连接正常
+            
+            # 检查AI模型是否加载
+            ai_model_loaded = False
+            try:
+                from ..app.services import get_threat_model
+                model = get_threat_model()
+                ai_model_loaded = model is not None
+            except:
+                ai_model_loaded = False
+            
+            # 获取账户余额
+            accounts_info = self.web3_manager.get_all_accounts_info()
+            account_balances = {acc['role']: acc['balance_eth'] for acc in accounts_info}
+            
+            return {
+                "status": "operational" if ganache_connected and database_connected else "degraded",
+                "ganache_connected": ganache_connected,
+                "database_connected": database_connected, 
+                "ai_model_loaded": ai_model_loaded,
+                "account_balances": account_balances,
+                "blockchain": {"status": "connected" if ganache_connected else "disconnected"},
+                "accounts": accounts_info,
+                "network": self.web3_manager.get_network_info()
+            }
+        except Exception as e:
+            logger.error(f"获取系统状态失败: {e}")
+            return {
+                "status": "error",
+                "ganache_connected": False,
+                "database_connected": False,
+                "ai_model_loaded": False,
+                "error": str(e)
+            }
 class RewardPoolService:
     def __init__(self):
         self.web3_manager = get_web3_manager()
-    # ...
+    
+    def get_reward_pool_info(self) -> Dict:
+        """获取奖金池信息"""
+        return {"success": True, "pool_info": {"balance": 85.1, "status": "Active"}}

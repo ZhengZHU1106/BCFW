@@ -1,0 +1,23 @@
+{
+  "manager_0": {
+    "signatures_count": 5,
+    "proposals_created": 2,
+    "avg_response_time_score": 85,
+    "total_contribution_score": 45,
+    "last_activity": null
+  },
+  "manager_1": {
+    "signatures_count": 3,
+    "proposals_created": 1,
+    "avg_response_time_score": 70,
+    "total_contribution_score": 25,
+    "last_activity": null
+  },
+  "manager_2": {
+    "signatures_count": 7,
+    "proposals_created": 0,
+    "avg_response_time_score": 90,
+    "total_contribution_score": 35,
+    "last_activity": null
+  }
+}

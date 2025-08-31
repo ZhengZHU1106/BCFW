@@ -18,7 +18,7 @@ This is a blockchain-based intelligent security platform (区块链智能安防�
 - `training.ipynb` - Complete model training code and architecture details
 - `model.pth`, `scaler.pkl`, `feature_selector.pkl`, `label_encoder.pkl` - Trained model deployment package
 - `抽样数据脚本.ipynb` - Script for extracting real attack samples from CIC-IDS2017
-- `inference_data_fixed.pt` - Pre-generated attack simulation data (properly formatted)
+- `inference_data_7class.pt` - Pre-generated attack simulation data (697MB, complete dataset)
 - `selected_features.json`, `model_info.json` - Model metadata
 
 ### Current Architecture (Phase 9 Complete - Optimized Structure)
@@ -31,7 +31,7 @@ backend/
 │   │   ├── model/         # Trained model artifacts (model.pth, scaler.pkl, etc.)
 │   │   ├── predictor.py   # Model prediction logic (fixed hierarchical decisions)
 │   │   └── model_architecture.py # PyTorch model definition
-│   ├── data/              # Inference data (inference_data_fixed.pt)
+│   ├── data/              # Inference data (inference_data_7class.pt)
 │   ├── multisig_contract.json    # MultiSig contract configuration
 │   ├── multisig_interface.json  # Contract ABI interface
 │   └── *_state.json       # System state files (reward pool, contributions)
@@ -270,6 +270,7 @@ POST /api/test/auto-distribute  # Test automatic reward distribution
 - ✅ **Model Performance**: 99.30% binary classification, 98.90% multi-class accuracy
 - ✅ **Prediction Logic**: Fixed hierarchical decision structure for optimal threat detection
 - ✅ **Data Pipeline**: Resolved preprocessing issues with scikit-learn 1.7.1 compatibility
+- ✅ **UI Display Logic**: Fixed Threat Detection page display issues for Benign predictions
 - 🐛 **User Experience Issue**: 5-second wait time after proposal signing due to synchronous reward distribution and blockchain transaction confirmations
 
 **Remaining Technical Challenges:**
@@ -307,7 +308,14 @@ POST /api/test/auto-distribute  # Test automatic reward distribution
 - **Multi-class Classification**: 98.90% accuracy across 6 threat categories  
 - **Model Architecture**: HierarchicalTransformerIDS with fixed hierarchical decision logic
 - **Compatibility**: scikit-learn 1.7.1 for proper preprocessing pipeline
-- **Data Pipeline**: Uses inference_data_fixed.pt with correctly formatted raw input data
+- **Data Pipeline**: Uses inference_data_7class.pt with correctly formatted raw input data
+
+**UI/UX Improvements (Latest):**
+- **Threat Detection Display**: Fixed display logic for Benign predictions in frontend
+  - **Response Level**: Benign predictions now show "Safe" instead of "Unknown"
+  - **Confidence Colors**: Inverted color scheme for Benign traffic (high confidence = green, low = red)
+  - **Status Values**: Proper status computation eliminates "Unknown" status displays
+  - **Backend Logic**: Enhanced response_level logic to handle Benign predictions correctly
 
 ## Next Development Phases: User Experience & Advanced Features
 

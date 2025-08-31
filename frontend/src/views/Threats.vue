@@ -97,13 +97,13 @@
                 <code class="ip-address">{{ threat.source_ip }}</code>
               </td>
               <td>
-                <span class="confidence-badge" :class="getConfidenceClass(threat.confidence)">
+                <span class="confidence-badge" :class="getConfidenceClass(threat.confidence, threat.threat_type)">
                   {{ (threat.confidence * 100).toFixed(1) }}%
                 </span>
               </td>
               <td>
                 <span class="response-level badge" :class="getResponseClass(threat.response_level)">
-                  {{ getResponseText(threat.response_level) }}
+                  {{ getResponseText(threat.response_level, threat.threat_type) }}
                 </span>
               </td>
               <td>
@@ -298,7 +298,15 @@ const createProposal = async (threat) => {
 // Note: canCreateProposal logic moved to ThreatDetailsModal component
 
 // Get confidence level style
-const getConfidenceClass = (confidence) => {
+const getConfidenceClass = (confidence, threatType = null) => {
+  // For Benign traffic, invert colors - high confidence is good (green)
+  if (threatType === 'Benign') {
+    if (confidence >= 0.8) return 'confidence-benign-high'  // Green - very safe
+    if (confidence >= 0.5) return 'confidence-benign-medium' // Yellow - uncertain
+    return 'confidence-benign-low'  // Red - suspicious
+  }
+  
+  // For actual threats, high confidence is dangerous (red)
   if (confidence >= 0.8) return 'confidence-high'
   if (confidence >= 0.5) return 'confidence-medium'
   return 'confidence-low'
@@ -316,11 +324,16 @@ const getResponseClass = (level) => {
 }
 
 // Get response level text
-const getResponseText = (level) => {
+const getResponseText = (level, threatType = null) => {
+  if (level === 'log_only' && threatType === 'Benign') {
+    return 'Safe'
+  }
+  
   const mapping = {
     'automatic_response': 'Auto Response',
-    'auto_create_proposal': 'Auto Proposal',
+    'auto_create_proposal': 'Auto Proposal', 
     'manual_decision_alert': 'Manual Decision',
+    'log_only': 'Log Only',
     'silent_logging': 'Silent Log'
   }
   return mapping[level] || 'Unknown'
@@ -519,6 +532,22 @@ onUnmounted(() => {
 .confidence-low {
   background-color: #d4edda;
   color: #27ae60;
+}
+
+/* Benign-specific confidence colors (inverted logic) */
+.confidence-benign-high {
+  background-color: #d4edda;
+  color: #27ae60;
+}
+
+.confidence-benign-medium {
+  background-color: #fff3cd;
+  color: #f39c12;
+}
+
+.confidence-benign-low {
+  background-color: #fee;
+  color: #e74c3c;
 }
 
 .no-threats {

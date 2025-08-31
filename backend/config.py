@@ -41,7 +41,7 @@ AI_MODEL_CONFIG = {
     "label_encoder_file": MODEL_PACKAGE_DIR / "model" / "label_encoder.pkl",
     "model_info_file": MODEL_PACKAGE_DIR / "model" / "model_info.json",
     "selected_features_file": MODEL_PACKAGE_DIR / "model" / "selected_features.json",
-    "inference_data_file": DATA_DIR / "inference_data_fixed.pt",
+    "inference_data_file": DATA_DIR / "inference_data_7class.pt",
     
     # 使用预处理数据 - 现在有了正确的quantile阈值，效果完美(100%准确率)
     "use_original_data": False,

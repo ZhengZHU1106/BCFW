@@ -151,12 +151,16 @@ async def get_proposals(db: Session = Depends(get_db)):
     """获取提案列表"""
     try:
         pending = proposal_service.get_pending_proposals(db)
+        approved = proposal_service.get_approved_proposals(db)
+        rejected = proposal_service.get_rejected_proposals(db)
         history = proposal_service.get_proposal_history(db, limit=20)
         
         return {
             "success": True,
             "data": {
                 "pending": pending,
+                "approved": approved,
+                "rejected": rejected,
                 "history": history,
                 "latest_pending_id": pending[0]["id"] if pending else None
             },
