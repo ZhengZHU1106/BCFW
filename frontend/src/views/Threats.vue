@@ -91,7 +91,7 @@
             <tr v-for="threat in threats" :key="threat.id" @click="showThreatDetails(threat)" class="threat-row">
               <td>{{ formatTime(threat.detected_at) }}</td>
               <td>
-                <span class="threat-type">{{ threat.threat_type }}</span>
+                <span class="threat-type" :class="{'threat-type-benign': threat.threat_type === 'Benign'}">{{ threat.threat_type }}</span>
               </td>
               <td>
                 <code class="ip-address">{{ threat.source_ip }}</code>
@@ -502,6 +502,10 @@ onUnmounted(() => {
 .threat-type {
   font-weight: 500;
   color: #e74c3c;
+}
+
+.threat-type-benign {
+  color: #27ae60 !important;
 }
 
 .ip-address {

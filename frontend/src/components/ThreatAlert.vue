@@ -19,7 +19,7 @@
       <div class="threat-details">
         <div class="detail-item">
           <span class="label">Type:</span>
-          <span class="value threat-type">{{ threat.threat_type || threat.predicted_class }}</span>
+          <span class="value threat-type" :class="{'threat-type-benign': (threat.threat_type || threat.predicted_class) === 'Benign'}">{{ threat.threat_type || threat.predicted_class }}</span>
         </div>
         <div class="detail-item">
           <span class="label">Source IP:</span>
@@ -132,6 +132,16 @@ const alertDescription = computed(() => {
 
 const confidenceClass = computed(() => {
   const confidence = props.threat.confidence
+  const threatType = props.threat.threat_type || props.threat.predicted_class
+  
+  // For Benign traffic, invert colors - high confidence is good (green)
+  if (threatType === 'Benign') {
+    if (confidence >= 0.8) return 'confidence-benign-high'  // Green - very safe
+    if (confidence >= 0.5) return 'confidence-benign-medium' // Yellow - uncertain
+    return 'confidence-benign-low'  // Red - suspicious
+  }
+  
+  // For actual threats, high confidence is dangerous (red)
   if (confidence >= 0.8) return 'confidence-high'
   if (confidence >= 0.5) return 'confidence-medium'
   return 'confidence-low'
@@ -139,22 +149,33 @@ const confidenceClass = computed(() => {
 
 const responseClass = computed(() => {
   const level = props.threat.response_level
+  const threatType = props.threat.threat_type || props.threat.predicted_class
+  
   const mapping = {
-    'auto': 'badge-success',
-    'auto_proposal': 'badge-info',
-    'manual': 'badge-warning',
-    'silent': 'badge-secondary'
+    'automatic_response': 'badge-success',
+    'auto_create_proposal': 'badge-info', 
+    'manual_decision_alert': 'badge-warning',
+    'log_only': 'badge-secondary',
+    'silent_logging': 'badge-secondary'
   }
   return mapping[level] || 'badge-secondary'
 })
 
 const responseText = computed(() => {
   const level = props.threat.response_level
+  const threatType = props.threat.threat_type || props.threat.predicted_class
+  
+  // Handle Benign traffic special case
+  if (level === 'log_only' && threatType === 'Benign') {
+    return 'Safe'
+  }
+  
   const mapping = {
-    'auto': 'Auto Response',
-    'auto_proposal': 'Auto Proposal',
-    'manual': 'Manual Decision',
-    'silent': 'Silent Log'
+    'automatic_response': 'Auto Response',
+    'auto_create_proposal': 'Auto Proposal', 
+    'manual_decision_alert': 'Manual Decision',
+    'log_only': 'Log Only',
+    'silent_logging': 'Silent Log'
   }
   return mapping[level] || 'Unknown'
 })
@@ -346,6 +367,10 @@ onUnmounted(() => {
   color: #dc3545;
 }
 
+.threat-type.threat-type-benign {
+  color: #27ae60 !important;
+}
+
 .ip-address {
   font-family: monospace;
   font-size: 0.9rem;
@@ -364,6 +389,19 @@ onUnmounted(() => {
 
 .confidence.confidence-low {
   color: #28a745;
+}
+
+/* Benign-specific confidence colors (inverted logic) */
+.confidence.confidence-benign-high {
+  color: #27ae60;
+}
+
+.confidence.confidence-benign-medium {
+  color: #f39c12;
+}
+
+.confidence.confidence-benign-low {
+  color: #e74c3c;
 }
 
 .response-level {

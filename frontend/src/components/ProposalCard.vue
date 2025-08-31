@@ -234,7 +234,14 @@ const finalSignerReward = computed(() => {
     const recipient = props.proposal.reward_recipient || props.proposal.final_signer
     return `${recipient} (0.01 ETH)`
   }
-  return 'Processing...'
+  // 如果提案已批准但没有奖励信息，显示相应状态
+  if (props.proposal.status === 'approved') {
+    return 'Reward pending'
+  }
+  if (props.proposal.status === 'rejected') {
+    return 'No rewards (rejected)'
+  }
+  return 'Pending approval'
 })
 
 const showActions = computed(() => {

@@ -89,7 +89,7 @@
               <tr v-for="log in logs" :key="log.id">
                 <td>{{ formatTime(log.detected_at) }}</td>
                 <td>
-                  <span class="threat-type">{{ log.threat_type }}</span>
+                  <span class="threat-type" :class="{'threat-type-benign': log.threat_type === 'Benign'}">{{ log.threat_type }}</span>
                 </td>
                 <td>
                   <code class="ip-address">{{ log.source_ip }}</code>
@@ -101,7 +101,7 @@
                 </td>
                 <td>
                   <span class="response-level badge" :class="getResponseClass(log.response_level)">
-                    {{ getResponseText(log.response_level) }}
+                    {{ getResponseText(log.response_level, log.threat_type) }}
                   </span>
                 </td>
                 <td>
@@ -308,16 +308,22 @@ const getResponseClass = (level) => {
     'automatic_response': 'badge-success',
     'auto_create_proposal': 'badge-info', 
     'manual_decision_alert': 'badge-warning',
+    'log_only': 'badge-secondary',
     'silent_logging': 'badge-secondary'
   }
   return mapping[level] || 'badge-secondary'
 }
 
-const getResponseText = (level) => {
+const getResponseText = (level, threatType = null) => {
+  if (level === 'log_only' && threatType === 'Benign') {
+    return 'Safe'
+  }
+  
   const mapping = {
     'automatic_response': 'Auto Response',
     'auto_create_proposal': 'Auto Proposal',
     'manual_decision_alert': 'Manual Decision',
+    'log_only': 'Log Only',
     'silent_logging': 'Silent Log'
   }
   return mapping[level] || 'Unknown'
@@ -498,6 +504,10 @@ onMounted(() => {
 .action-type {
   font-weight: 500;
   color: #e74c3c;
+}
+
+.threat-type-benign {
+  color: #27ae60 !important;
 }
 
 .ip-address {
