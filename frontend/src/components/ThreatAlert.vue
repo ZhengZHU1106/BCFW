@@ -9,8 +9,28 @@
         <p class="alert-time">{{ formatTime(threat.detected_at) }}</p>
       </div>
       <div class="alert-actions">
-        <button v-if="showCreateProposal" @click="createProposal" class="btn btn-primary btn-sm">
-          Create Proposal
+        <!-- Demo Mode: Multiple Operator Options -->
+        <div v-if="isDemoMode && canCreateProposal" class="demo-operator-actions">
+          <button 
+            v-for="operatorIndex in [0, 1, 2, 3, 4]" 
+            :key="`op-${operatorIndex}`"
+            @click="createProposal(`operator_${operatorIndex}`)"
+            class="btn btn-primary btn-sm demo-btn"
+            :disabled="creatingProposal"
+            style="margin-right: 0.5rem; margin-bottom: 0.25rem;"
+          >
+            {{ creatingProposal ? '⏳ Creating...' : `✍️ Create as Operator_${operatorIndex}` }}
+          </button>
+        </div>
+        
+        <!-- Normal Mode: Single Button -->
+        <button 
+          v-else-if="showCreateProposal" 
+          @click="createProposal()" 
+          class="btn btn-primary btn-sm"
+          :disabled="creatingProposal"
+        >
+          {{ creatingProposal ? '⏳ Creating...' : 'Create Proposal' }}
         </button>
       </div>
     </div>
@@ -67,6 +87,10 @@ const props = defineProps({
   hideDuration: {
     type: Number,
     default: 10000 // 10秒
+  },
+  isDemoMode: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -76,6 +100,9 @@ const emit = defineEmits(['hide', 'proposalCreated'])
 const timerWidth = ref(100)
 let hideTimer = null
 let timerInterval = null
+
+// 创建提案状态
+const creatingProposal = ref(false)
 
 // 计算属性
 const alertClass = computed(() => {
@@ -182,18 +209,37 @@ const responseText = computed(() => {
 
 const showCreateProposal = computed(() => {
   const userRole = localStorage.getItem('userRole') || 'operator'
-  return userRole === 'operator' && 
+  return userRole.startsWith('operator') && 
          props.threat.response_level === 'manual' && 
          props.threat.status === 'detected'
 })
 
+const canCreateProposal = computed(() => {
+  return props.threat.response_level === 'manual' && 
+         props.threat.status === 'detected'
+})
+
 // 创建提案
-const createProposal = async () => {
+const createProposal = async (operatorRole = null) => {
+  if (creatingProposal.value) return
+  
+  creatingProposal.value = true
+  
   try {
-    const result = await systemAPI.createProposal({
+    const proposalData = {
       detection_id: props.threat.id,
-      action: 'block'
-    })
+      action: 'block',
+      threat_type: props.threat.threat_type || props.threat.predicted_class,
+      confidence: props.threat.confidence,
+      target_ip: props.threat.source_ip
+    }
+    
+    // In demo mode, we can specify which operator is creating the proposal
+    if (operatorRole && props.isDemoMode) {
+      proposalData.created_by = operatorRole
+    }
+    
+    const result = await systemAPI.createProposal(proposalData)
     
     if (result.success) {
       emit('proposalCreated', result.data)
@@ -201,7 +247,10 @@ const createProposal = async () => {
     }
   } catch (error) {
     console.error('Proposal creation failed:', error)
-    alert('Proposal creation failed, please try again later')
+    const roleText = operatorRole ? ` as ${operatorRole}` : ''
+    alert(`Proposal creation failed${roleText}. Please try again later.`)
+  } finally {
+    creatingProposal.value = false
   }
 }
 
@@ -434,5 +483,43 @@ onUnmounted(() => {
   height: 100%;
   background-color: #007bff;
   transition: width 0.1s linear;
+}
+
+/* Demo Mode Styles */
+.demo-operator-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.demo-btn {
+  position: relative;
+  border: 2px solid transparent;
+  background: linear-gradient(white, white) padding-box,
+              linear-gradient(135deg, #3498db, #2980b9) border-box;
+  font-size: 0.75rem;
+  padding: 0.375rem 0.75rem;
+}
+
+.demo-btn::before {
+  content: '🎯';
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  font-size: 0.6rem;
+  background: #3498db;
+  border-radius: 50%;
+  width: 12px;
+  height: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.demo-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(52, 152, 219, 0.3);
 }
 </style>

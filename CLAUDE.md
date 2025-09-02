@@ -232,6 +232,7 @@ POST /api/test/auto-distribute  # Test automatic reward distribution
 - ✅ **Phase 8.5: Proposal Rejection System** - 1-vote veto rejection mechanism with full UI support
 - ✅ **Phase 9: Model Performance Optimization** - Fixed prediction logic and data preprocessing, achieved 99.30% binary accuracy and 98.90% multi-class accuracy
 - ✅ **Phase 15: UI Consistency Optimization** - Fixed ThreatAlert component display issues and Benign threat visualization, complete UI consistency
+- ✅ **Phase 16: Confidence Explanation UX Enhancement** - Implemented lightweight tooltip system with mathematical formulas for improved user experience
 
 **MultiSig Contract Features (Phase 4 Complete):**
 - ✅ Custom Solidity smart contract (`MultiSigProposal.sol`)
@@ -274,11 +275,15 @@ POST /api/test/auto-distribute  # Test automatic reward distribution
 - ✅ **UI Consistency**: All threat detection interface inconsistencies resolved, including ThreatAlert component fixes
 - 🐛 **User Experience Issue**: 5-second wait time after proposal signing due to synchronous reward distribution and blockchain transaction confirmations
 
-**Recent UI Fixes Completed:**
+**Recent UI/UX Improvements Completed:**
 - ✅ **ThreatAlert Component**: Fixed "Unknown" response level display, now correctly shows "Safe" for Benign detections
 - ✅ **Benign Threat Colors**: Implemented green color for Benign threat types and inverted confidence color logic
 - ✅ **Response Level Mapping**: Fixed component mappings to match backend response level format
-- ✅ **Comprehensive Testing**: Playwright end-to-end testing verified all UI fixes work correctly
+- ✅ **Confidence Tooltip System**: Implemented lightweight tooltip with mathematical formula display
+  - **ConfidenceTooltip Component**: Hover-triggered tooltip showing confidence calculation formula and quick thresholds
+  - **Enhanced Modal**: Added mathematical formula section with detailed parameter explanations
+  - **Improved UX**: Reduced interruption for experienced users while preserving educational content
+- ✅ **Comprehensive Testing**: Playwright end-to-end testing verified all UI fixes and enhancements work correctly
 
 **Remaining Technical Challenges:**
 - 🔄 **MetaMask Integration**: Direct user wallet interaction for genuine Web3 experience

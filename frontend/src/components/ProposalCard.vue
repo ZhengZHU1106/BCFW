@@ -36,15 +36,33 @@
       
       <!-- 多签进度 -->
       <div class="signature-progress">
-        <div class="progress-header">
-          <span class="progress-title">Signature Progress</span>
-          <span class="progress-count">{{ signedCount }}/{{ requiredSignatures }}</span>
-        </div>
-        <div class="progress-bar">
-          <div 
-            class="progress-fill" 
-            :style="{ width: progressPercentage + '%' }"
-          ></div>
+        <div class="progress-visual">
+          <div class="progress-circle">
+            <svg width="60" height="60">
+              <circle cx="30" cy="30" r="25" fill="none" stroke="#e0e0e0" stroke-width="4"/>
+              <circle 
+                cx="30" cy="30" r="25" fill="none" 
+                stroke="#007bff" stroke-width="4"
+                stroke-dasharray="157"
+                :stroke-dashoffset="157 - (157 * progressPercentage / 100)"
+                transform="rotate(-90 30 30)"
+                class="progress-circle-fill"
+              />
+            </svg>
+            <div class="progress-text">{{ signedCount }}/{{ requiredSignatures }}</div>
+          </div>
+          <div class="progress-info">
+            <div class="progress-header">
+              <span class="progress-title">Multi-Signature Progress</span>
+              <span class="progress-percentage">{{ Math.round(progressPercentage) }}%</span>
+            </div>
+            <div class="progress-bar">
+              <div 
+                class="progress-fill" 
+                :style="{ width: progressPercentage + '%' }"
+              ></div>
+            </div>
+          </div>
         </div>
       </div>
       
@@ -69,23 +87,47 @@
               <span v-else class="status-icon pending">○</span>
             </div>
             <div class="signer-action">
-              <button 
-                v-if="canSign(index)"
-                @click="signProposal(index)"
-                class="btn btn-primary btn-sm"
-                :disabled="signing || rejecting || props.proposal.status !== 'pending'"
-              >
-                {{ signing ? '⏳ Signing...' : '✍️ Sign' }}
-              </button>
-              <button 
-                v-if="canReject(index)"
-                @click="rejectProposal(index)"
-                class="btn btn-danger btn-sm"
-                :disabled="signing || rejecting || props.proposal.status !== 'pending'"
-                style="margin-left: 0.5rem"
-              >
-                {{ rejecting ? '⏳ Rejecting...' : '❌ Reject' }}
-              </button>
+              <!-- Demo Mode: Show buttons for all managers -->
+              <template v-if="isDemoMode">
+                <button 
+                  v-if="!signer.signed && props.proposal.status === 'pending'"
+                  @click="signProposal(index)"
+                  class="btn btn-primary btn-sm demo-btn"
+                  :disabled="signing || rejecting"
+                >
+                  {{ signing ? '⏳ Signing...' : `✍️ Sign as ${signer.name}` }}
+                </button>
+                <button 
+                  v-if="!signer.signed && props.proposal.status === 'pending' && !props.proposal.rejected_by"
+                  @click="rejectProposal(index)"
+                  class="btn btn-danger btn-sm demo-btn"
+                  :disabled="signing || rejecting"
+                  style="margin-left: 0.5rem"
+                >
+                  {{ rejecting ? '⏳ Rejecting...' : `❌ Reject as ${signer.name}` }}
+                </button>
+              </template>
+              
+              <!-- Normal Mode: Show buttons based on current role -->
+              <template v-else>
+                <button 
+                  v-if="canSign(index)"
+                  @click="signProposal(index)"
+                  class="btn btn-primary btn-sm"
+                  :disabled="signing || rejecting || props.proposal.status !== 'pending'"
+                >
+                  {{ signing ? '⏳ Signing...' : '✍️ Sign' }}
+                </button>
+                <button 
+                  v-if="canReject(index)"
+                  @click="rejectProposal(index)"
+                  class="btn btn-danger btn-sm"
+                  :disabled="signing || rejecting || props.proposal.status !== 'pending'"
+                  style="margin-left: 0.5rem"
+                >
+                  {{ rejecting ? '⏳ Rejecting...' : '❌ Reject' }}
+                </button>
+              </template>
             </div>
           </div>
         </div>
@@ -139,6 +181,10 @@ const props = defineProps({
   currentRole: {
     type: String,
     default: 'operator_0'
+  },
+  isDemoMode: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -460,6 +506,39 @@ const formatAddress = (address) => {
   margin-bottom: 1.5rem;
 }
 
+.progress-visual {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.progress-circle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.progress-circle svg {
+  transform: rotate(-90deg);
+}
+
+.progress-circle-fill {
+  transition: stroke-dashoffset 0.5s ease;
+}
+
+.progress-text {
+  position: absolute;
+  font-size: 0.85rem;
+  font-weight: bold;
+  color: #2c3e50;
+}
+
+.progress-info {
+  flex: 1;
+}
+
 .progress-header {
   display: flex;
   justify-content: space-between;
@@ -470,6 +549,13 @@ const formatAddress = (address) => {
 .progress-title {
   font-weight: 500;
   color: #2c3e50;
+  font-size: 0.9rem;
+}
+
+.progress-percentage {
+  font-size: 0.875rem;
+  color: #007bff;
+  font-weight: 600;
 }
 
 .progress-count {
@@ -478,9 +564,9 @@ const formatAddress = (address) => {
 }
 
 .progress-bar {
-  height: 8px;
+  height: 6px;
   background-color: #e9ecef;
-  border-radius: 4px;
+  border-radius: 3px;
   overflow: hidden;
 }
 
@@ -631,5 +717,44 @@ const formatAddress = (address) => {
 
 .rejection-result .result-details p {
   margin: 0;
+}
+
+/* Demo Mode Styles */
+.demo-btn {
+  position: relative;
+  border: 2px solid transparent;
+  background: linear-gradient(white, white) padding-box,
+              linear-gradient(135deg, #3498db, #2980b9) border-box;
+}
+
+.demo-btn::before {
+  content: '🎯';
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  font-size: 0.7rem;
+  background: #3498db;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.demo-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(52, 152, 219, 0.3);
+}
+
+.demo-btn.btn-danger {
+  background: linear-gradient(white, white) padding-box,
+              linear-gradient(135deg, #e74c3c, #c0392b) border-box;
+}
+
+.demo-btn.btn-danger::before {
+  background: #e74c3c;
 }
 </style>

@@ -15,6 +15,9 @@
         <button @click="simulateAttackFlow" class="btn btn-danger" :disabled="isSimulating">
           {{ isSimulating ? 'Simulating...' : 'Simulate Attack Flow' }}
         </button>
+        <button @click="loadActiveProposals" class="btn btn-warning" :disabled="loadingProposals">
+          {{ loadingProposals ? 'Loading...' : 'Show Active Voting' }}
+        </button>
         <button @click="refreshNetwork" class="btn btn-secondary">
           Refresh Network
         </button>
@@ -51,6 +54,7 @@
         :nodes="nodes" 
         :layout="selectedLayout"
         :attack-flow="attackFlowSteps"
+        :voting-data="managerVotes"
         @node-click="showNodeDetails"
         @layout-updated="onLayoutUpdated"
       />
@@ -159,6 +163,67 @@
         </div>
       </div>
     </div>
+
+    <!-- Voting Progress Panel -->
+    <div v-if="votingSteps.length > 0 || loadingProposals" class="voting-panel">
+      <h3>Multi-Signature Voting</h3>
+      <div class="voting-overview">
+        <div class="voting-progress">
+          <div class="progress-circle">
+            <svg width="80" height="80">
+              <circle cx="40" cy="40" r="35" fill="none" stroke="#e0e0e0" stroke-width="6"/>
+              <circle 
+                cx="40" cy="40" r="35" fill="none" 
+                stroke="#28a745" stroke-width="6"
+                stroke-dasharray="220"
+                :stroke-dashoffset="220 - (220 * (Array.from(managerVotes.values()).filter(v => v.status === 'signed').length / 2))"
+                transform="rotate(-90 40 40)"
+              />
+            </svg>
+            <div class="progress-text">
+              {{ Array.from(managerVotes.values()).filter(v => v.status === 'signed').length }}/2
+            </div>
+          </div>
+          <div class="voting-status">
+            <span v-if="votingSteps.some(s => s.action === 'proposal_ready')" class="status-approved">✅ Ready for Execution</span>
+            <span v-else-if="votingSteps.some(s => s.action === 'real_proposal_status')" class="status-voting">🗳️ Active Proposal</span>
+            <span v-else-if="votingSteps.some(s => s.action === 'no_active_proposals')" class="status-idle">💤 No Active Proposals</span>
+            <span v-else-if="loadingProposals" class="status-loading">⏳ Loading...</span>
+            <span v-else class="status-pending">⏳ Awaiting Signatures</span>
+          </div>
+        </div>
+      </div>
+      
+      <div class="manager-votes">
+        <h4>Manager Signatures</h4>
+        <div class="votes-list">
+          <div v-for="node in nodes.filter(n => n.type === 'manager')" :key="node.id" class="vote-item">
+            <div class="manager-info">
+              <span class="manager-name">{{ node.id }}</span>
+              <span class="manager-address">{{ node.address ? node.address.slice(0, 8) + '...' : '' }}</span>
+            </div>
+            <div class="vote-status">
+              <span v-if="managerVotes.get(node.id)?.status === 'signed'" class="status-signed">✅ Signed</span>
+              <span v-else-if="managerVotes.get(node.id)?.status === 'pending'" class="status-pending">⏳ Pending</span>
+              <span v-else class="status-inactive">⚪ Not Started</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div v-if="votingSteps.length > 0" class="voting-steps">
+        <h4>Recent Activity</h4>
+        <div class="steps-list">
+          <div v-for="step in votingSteps" :key="`vote-${step.step}`" class="voting-step">
+            <div class="step-indicator">{{ step.step }}</div>
+            <div class="step-details">
+              <p>{{ step.description }}</p>
+              <span v-if="step.progress" class="step-progress">Progress: {{ step.progress.toFixed(0) }}%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -176,7 +241,11 @@ const nodeDetails = ref(null)
 const showNodeModal = ref(false)
 const attackFlowSteps = ref([])
 const isSimulating = ref(false)
+const loadingProposals = ref(false)
+const votingSteps = ref([])
+const managerVotes = ref(new Map())
 const isLoading = ref(false)
+const activeProposals = ref([])
 
 // Node management modal data
 const showCreateModal = ref(false)
@@ -296,10 +365,110 @@ const simulateAttackFlow = async () => {
   }
 }
 
+// Load active proposals and display real voting status
+const loadActiveProposals = async () => {
+  if (loadingProposals.value) return
+  
+  loadingProposals.value = true
+  managerVotes.value.clear()
+  votingSteps.value = []
+  activeProposals.value = []
+  
+  try {
+    // Load active proposals from API
+    const response = await fetch('/api/proposals')
+    const result = await response.json()
+    
+    if (result.success) {
+      const proposals = result.data || []
+      activeProposals.value = proposals.filter(p => p.status === 'pending')
+      
+      if (activeProposals.value.length === 0) {
+        votingSteps.value.push({
+          step: 1,
+          action: 'no_active_proposals',
+          description: 'No active proposals requiring signatures',
+          progress: 0
+        })
+        return
+      }
+      
+      // Focus on the most recent active proposal
+      const currentProposal = activeProposals.value[0]
+      
+      // Get manager nodes
+      const managerNodes = nodes.value.filter(node => node.type === 'manager')
+      
+      // Initialize voting states based on actual proposal status
+      managerNodes.forEach((node, index) => {
+        const managerRole = `manager_${index}`
+        const hasSigned = currentProposal.signatures && currentProposal.signatures.includes(managerRole)
+        
+        managerVotes.value.set(node.id, {
+          status: hasSigned ? 'signed' : 'pending',
+          timestamp: hasSigned ? new Date() : null,
+          managerRole: managerRole
+        })
+      })
+      
+      // Calculate progress
+      const signedCount = currentProposal.signatures ? currentProposal.signatures.length : 0
+      const requiredSignatures = 2
+      const progress = (signedCount / requiredSignatures) * 100
+      
+      // Add voting status
+      votingSteps.value.push({
+        step: 1,
+        action: 'real_proposal_status',
+        description: `Proposal #${currentProposal.id}: ${currentProposal.threat_type} threat`,
+        proposalId: currentProposal.id,
+        progress: progress
+      })
+      
+      votingSteps.value.push({
+        step: 2,
+        action: 'signature_status',
+        description: `Signatures: ${signedCount}/${requiredSignatures} collected`,
+        progress: progress
+      })
+      
+      if (progress >= 100) {
+        votingSteps.value.push({
+          step: 3,
+          action: 'proposal_ready',
+          description: 'Proposal ready for execution',
+          progress: 100
+        })
+      }
+      
+      // Update canvas
+      if (networkCanvas.value) {
+        networkCanvas.value.updateVotingStates(managerVotes.value)
+      }
+      
+    } else {
+      throw new Error(result.message || 'Failed to load proposals')
+    }
+    
+  } catch (error) {
+    console.error('Error loading active proposals:', error)
+    votingSteps.value.push({
+      step: 1,
+      action: 'error',
+      description: 'Failed to load proposal data',
+      progress: 0
+    })
+  } finally {
+    loadingProposals.value = false
+  }
+}
+
 // Refresh network
 const refreshNetwork = async () => {
   await loadNetworkTopology()
   attackFlowSteps.value = []
+  managerVotes.value.clear()
+  votingSteps.value = []
 }
 
 // Node management methods
@@ -597,6 +766,15 @@ onMounted(() => {
   background-color: #218838;
 }
 
+.btn-warning {
+  background-color: #ffc107;
+  color: #212529;
+}
+
+.btn-warning:hover:not(:disabled) {
+  background-color: #e0a800;
+}
+
 .btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -744,5 +922,216 @@ onMounted(() => {
     width: 100%;
     margin-top: 1rem;
   }
+  
+  .voting-panel {
+    position: relative;
+    right: auto;
+    top: auto;
+    transform: none;
+    width: 100%;
+    margin-top: 1rem;
+  }
+}
+
+/* Voting Panel Styles */
+.voting-panel {
+  position: fixed;
+  top: 50%;
+  left: 1rem;
+  transform: translateY(-50%);
+  width: 320px;
+  max-height: 80vh;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  padding: 1rem;
+  overflow-y: auto;
+  z-index: 1000;
+  border: 1px solid #e9ecef;
+}
+
+.voting-panel h3 {
+  margin: 0 0 1rem 0;
+  color: #2c3e50;
+  font-size: 1.1rem;
+  text-align: center;
+}
+
+.voting-overview {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+.voting-progress {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.progress-circle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.progress-circle svg {
+  transform: rotate(-90deg);
+}
+
+.progress-circle circle:last-child {
+  transition: stroke-dashoffset 0.8s ease;
+}
+
+.progress-text {
+  position: absolute;
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: #28a745;
+}
+
+.voting-status {
+  text-align: center;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.status-approved {
+  color: #28a745;
+}
+
+.status-voting {
+  color: #007bff;
+  animation: pulse 1.5s infinite;
+}
+
+.status-pending {
+  color: #6c757d;
+}
+
+.manager-votes {
+  margin-bottom: 1.5rem;
+}
+
+.manager-votes h4 {
+  margin: 0 0 0.75rem 0;
+  color: #2c3e50;
+  font-size: 1rem;
+  border-bottom: 1px solid #e9ecef;
+  padding-bottom: 0.5rem;
+}
+
+.votes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.vote-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem;
+  background: #f8f9fa;
+  border-radius: 6px;
+  border: 1px solid #e9ecef;
+}
+
+.manager-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.manager-name {
+  font-weight: 600;
+  color: #2c3e50;
+  font-size: 0.9rem;
+}
+
+.manager-address {
+  font-family: monospace;
+  font-size: 0.75rem;
+  color: #6c757d;
+}
+
+.vote-status {
+  display: flex;
+  align-items: center;
+}
+
+.status-signed {
+  color: #28a745;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.status-pending {
+  color: #ffc107;
+  font-weight: 600;
+  font-size: 0.85rem;
+  animation: pulse 2s infinite;
+}
+
+.status-inactive {
+  color: #6c757d;
+  font-size: 0.85rem;
+}
+
+.voting-steps {
+  border-top: 1px solid #e9ecef;
+  padding-top: 1rem;
+}
+
+.voting-steps h4 {
+  margin: 0 0 0.75rem 0;
+  color: #2c3e50;
+  font-size: 0.95rem;
+}
+
+.steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.voting-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.5rem;
+  background: #f8f9fa;
+  border-radius: 6px;
+  border-left: 3px solid #007bff;
+}
+
+.step-indicator {
+  background: #007bff;
+  color: white;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: bold;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.step-details p {
+  margin: 0 0 0.25rem 0;
+  font-size: 0.85rem;
+  color: #2c3e50;
+  line-height: 1.3;
+}
+
+.step-progress {
+  font-size: 0.75rem;
+  color: #6c757d;
+  font-weight: 500;
 }
 </style>

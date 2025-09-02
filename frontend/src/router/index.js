@@ -4,6 +4,7 @@ import Threats from '@/views/Threats.vue'
 import Proposals from '@/views/Proposals.vue'
 import History from '@/views/History.vue'
 import Network from '@/views/Network.vue'
+import SecurityFlow from '@/views/SecurityFlow.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -32,6 +33,11 @@ const router = createRouter({
       path: '/network',
       name: 'network',
       component: Network
+    },
+    {
+      path: '/security-flow',
+      name: 'security-flow',
+      component: SecurityFlow
     }
   ]
 })

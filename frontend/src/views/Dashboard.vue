@@ -2,6 +2,32 @@
   <div class="dashboard">
     <h2>System Dashboard</h2>
     
+    <!-- Security Flow Status -->
+    <div class="flow-status-indicator">
+      <div class="flow-stages">
+        <div 
+          v-for="(stage, index) in securityFlowStages" 
+          :key="stage.id"
+          class="flow-stage"
+          :class="{ 
+            'stage-active': currentFlowStage === index,
+            'stage-completed': index < currentFlowStage,
+            'stage-idle': currentFlowStage === 0 && index === 0
+          }"
+        >
+          <div class="stage-dot"></div>
+          <span class="stage-label">{{ stage.name }}</span>
+          <div v-if="index < securityFlowStages.length - 1" class="stage-connector"></div>
+        </div>
+      </div>
+      <div class="flow-status-text">
+        <span class="status-label">Current Status:</span>
+        <span class="status-text" :class="`status-${flowStatusClass}`">
+          {{ currentFlowStatusText }}
+        </span>
+      </div>
+    </div>
+    
     <!-- System Status Card -->
     <div class="status-card card">
       <div class="card-header">
@@ -169,6 +195,18 @@ const accounts = ref([])
 
 // Attack simulation status
 const isSimulating = ref(false)
+
+// Security flow status
+const securityFlowStages = ref([
+  { id: 'monitoring', name: 'Monitoring' },
+  { id: 'detection', name: 'Detection' },
+  { id: 'analysis', name: 'Analysis' },
+  { id: 'voting', name: 'Voting' },
+  { id: 'execution', name: 'Execution' }
+])
+const currentFlowStage = ref(0) // 0 = idle/monitoring, 1 = detection, etc.
+const currentFlowStatusText = ref('System Ready - Monitoring Network')
+const flowStatusClass = ref('idle')
 
 // Reward Pool Management
 const rewardPoolInfo = ref({
@@ -365,8 +403,136 @@ onUnmounted(() => {
 }
 
 .dashboard h2 {
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
   color: #2c3e50;
+}
+
+/* Security Flow Status Indicator */
+.flow-status-indicator {
+  background: white;
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e9ecef;
+}
+
+.flow-stages {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  position: relative;
+}
+
+.flow-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  flex: 1;
+}
+
+.stage-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #e9ecef;
+  border: 2px solid #dee2e6;
+  margin-bottom: 0.5rem;
+  transition: all 0.3s ease;
+}
+
+.flow-stage.stage-idle .stage-dot {
+  background: #6c757d;
+  border-color: #495057;
+}
+
+.flow-stage.stage-active .stage-dot {
+  background: #007bff;
+  border-color: #0056b3;
+  animation: pulse 2s infinite;
+}
+
+.flow-stage.stage-completed .stage-dot {
+  background: #28a745;
+  border-color: #1e7e34;
+}
+
+.stage-label {
+  font-size: 0.75rem;
+  color: #6c757d;
+  font-weight: 500;
+  text-align: center;
+}
+
+.flow-stage.stage-active .stage-label {
+  color: #007bff;
+  font-weight: 600;
+}
+
+.flow-stage.stage-completed .stage-label {
+  color: #28a745;
+  font-weight: 600;
+}
+
+.stage-connector {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  width: calc(100% - 12px);
+  height: 2px;
+  background: #dee2e6;
+  z-index: -1;
+  transition: background-color 0.3s ease;
+}
+
+.flow-stage.stage-completed .stage-connector {
+  background: #28a745;
+}
+
+.flow-status-text {
+  text-align: center;
+  padding-top: 1rem;
+  border-top: 1px solid #e9ecef;
+}
+
+.status-label {
+  font-size: 0.9rem;
+  color: #6c757d;
+  margin-right: 0.5rem;
+}
+
+.status-text {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.status-text.status-idle {
+  color: #6c757d;
+}
+
+.status-text.status-active {
+  color: #007bff;
+}
+
+.status-text.status-completed {
+  color: #28a745;
+}
+
+.status-text.status-error {
+  color: #dc3545;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.1);
+  }
 }
 
 .status-card {

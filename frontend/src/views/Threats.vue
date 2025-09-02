@@ -7,9 +7,14 @@
       </button>
     </div>
 
+    <!-- Demo Mode Banner -->
+    <div v-if="isDemoMode" class="demo-banner">
+      🎯 <strong>Demo Mode Active</strong> - Multiple operator options available for proposal creation
+    </div>
+    
     <!-- Latest Threat Alert -->
     <div class="latest-threat" v-if="latestThreat">
-      <ThreatAlert :threat="latestThreat" />
+      <ThreatAlert :threat="latestThreat" :is-demo-mode="isDemoMode" />
     </div>
 
     <!-- Threat Statistics -->
@@ -75,13 +80,18 @@
               <th>Target IP</th>
               <th>
                 Confidence
-                <button 
-                  @click="showConfidenceExplanation = true"
-                  class="confidence-info-btn"
-                  title="Learn how confidence scores are calculated"
-                >
-                  ℹ️
-                </button>
+                <div class="confidence-info-wrapper">
+                  <button 
+                    @click="showConfidenceExplanation = true"
+                    @mouseenter="showConfidenceTooltip = true"
+                    @mouseleave="showConfidenceTooltip = false"
+                    class="confidence-info-btn"
+                    title="Learn how confidence scores are calculated"
+                  >
+                    ℹ️
+                  </button>
+                  <ConfidenceTooltip v-if="showConfidenceTooltip" />
+                </div>
               </th>
               <th>Response Level</th>
               <th>Status</th>
@@ -139,12 +149,14 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { systemAPI } from '@/api/system'
 import ThreatAlert from '@/components/ThreatAlert.vue'
 import ConfidenceExplanationModal from '@/components/ConfidenceExplanationModal.vue'
+import ConfidenceTooltip from '@/components/ConfidenceTooltip.vue'
 import ThreatDetailsModal from '@/components/ThreatDetailsModal.vue'
 
 // Threat data
 const threats = ref([])
 const latestThreat = ref(null)
 const isSimulating = ref(false)
+const isDemoMode = ref(false)
 
 // Threat statistics
 const threatStats = ref({
@@ -160,6 +172,7 @@ const currentRole = ref('operator')
 
 // Modal control
 const showConfidenceExplanation = ref(false)
+const showConfidenceTooltip = ref(false)
 const selectedThreat = ref(null)
 
 // Timer
@@ -375,13 +388,20 @@ const handleRoleChange = (event) => {
   currentRole.value = event.detail.role
 }
 
+// Listen for demo mode changes
+const handleDemoModeChange = (event) => {
+  isDemoMode.value = event.detail.isDemoMode
+}
+
 // Lifecycle
 onMounted(() => {
-  // Get current role
+  // Get current role and demo mode
   currentRole.value = localStorage.getItem('userRole') || 'operator_0'
+  isDemoMode.value = localStorage.getItem('demoMode') === 'true'
   
-  // Listen for role changes
+  // Listen for role and demo mode changes
   window.addEventListener('roleChanged', handleRoleChange)
+  window.addEventListener('demoModeChanged', handleDemoModeChange)
   
   // Initialize data
   refreshThreats()
@@ -395,12 +415,29 @@ onUnmounted(() => {
     clearInterval(refreshTimer)
   }
   window.removeEventListener('roleChanged', handleRoleChange)
+  window.removeEventListener('demoModeChanged', handleDemoModeChange)
 })
 </script>
 
 <style scoped>
 .threats-page {
   padding: 1rem 0;
+}
+
+.demo-banner {
+  background: linear-gradient(135deg, #3498db, #2980b9);
+  color: white;
+  padding: 0.75rem 1.5rem;
+  text-align: center;
+  margin-bottom: 1rem;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(52, 152, 219, 0.3);
+  animation: pulse-banner 2s infinite alternate;
+}
+
+@keyframes pulse-banner {
+  from { opacity: 0.9; }
+  to { opacity: 1; }
 }
 
 .page-header {
@@ -566,12 +603,17 @@ onUnmounted(() => {
 }
 
 /* Confidence info button */
+.confidence-info-wrapper {
+  position: relative;
+  display: inline-block;
+  margin-left: 0.5rem;
+}
+
 .confidence-info-btn {
   background: none;
   border: none;
   cursor: pointer;
   font-size: 0.9rem;
-  margin-left: 0.5rem;
   padding: 0.2rem;
   border-radius: 3px;
   opacity: 0.7;

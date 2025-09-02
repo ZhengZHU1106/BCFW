@@ -57,6 +57,10 @@ const props = defineProps({
   attackFlow: {
     type: Array,
     default: () => []
+  },
+  votingData: {
+    type: Map,
+    default: () => new Map()
   }
 })
 
@@ -250,6 +254,42 @@ const drawNode = (node, position) => {
     ctx.value.strokeStyle = '#fff'
     ctx.value.lineWidth = 1
     ctx.value.stroke()
+  }
+  
+  // Draw voting indicator for manager nodes
+  if (node.type === 'manager' && props.votingData && props.votingData.size > 0) {
+    const votingState = props.votingData.get(node.id)
+    if (votingState) {
+      const indicatorX = x - radius + 5
+      const indicatorY = y - radius + 5
+      
+      ctx.value.beginPath()
+      ctx.value.arc(indicatorX, indicatorY, 8, 0, 2 * Math.PI)
+      
+      if (votingState.status === 'signed') {
+        ctx.value.fillStyle = '#28a745'  // Green for signed
+      } else if (votingState.status === 'pending') {
+        ctx.value.fillStyle = '#ffc107'  // Yellow for pending
+      } else {
+        ctx.value.fillStyle = '#6c757d'  // Gray for inactive
+      }
+      
+      ctx.value.fill()
+      ctx.value.strokeStyle = '#fff'
+      ctx.value.lineWidth = 2
+      ctx.value.stroke()
+      
+      // Add checkmark for signed status
+      if (votingState.status === 'signed') {
+        ctx.value.strokeStyle = '#fff'
+        ctx.value.lineWidth = 2
+        ctx.value.beginPath()
+        ctx.value.moveTo(indicatorX - 3, indicatorY)
+        ctx.value.lineTo(indicatorX - 1, indicatorY + 2)
+        ctx.value.lineTo(indicatorX + 3, indicatorY - 2)
+        ctx.value.stroke()
+      }
+    }
   }
   
   // Draw node label
@@ -477,6 +517,18 @@ const animateAttackFlow = (flowSteps) => {
   }
 }
 
+// Update voting states
+const updateVotingStates = (votingData) => {
+  // This will trigger a re-render with updated voting states
+  render()
+}
+
+// Clear voting states
+const clearVotingStates = () => {
+  // This will trigger a re-render without voting states
+  render()
+}
+
 // Watch for prop changes
 watch(() => props.nodes, (newNodes, oldNodes) => {
   console.log(`NetworkCanvas: Received ${newNodes.length} nodes (was ${oldNodes?.length || 0}):`, newNodes.map(n => n.id))
@@ -534,7 +586,9 @@ onMounted(() => {
 // Expose methods
 defineExpose({
   updateLayout,
-  animateAttackFlow
+  animateAttackFlow,
+  updateVotingStates,
+  clearVotingStates
 })
 </script>
 

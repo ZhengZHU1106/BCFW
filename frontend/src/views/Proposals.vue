@@ -1,5 +1,10 @@
 <template>
   <div class="proposals-page">
+    <!-- Demo Mode Banner -->
+    <div v-if="isDemoMode" class="demo-banner">
+      🎯 <strong>Demo Mode Active</strong> - All role actions are available for demonstration
+    </div>
+    
     <div class="page-header">
       <h2>Proposal Management</h2>
       <div class="header-actions">
@@ -54,6 +59,7 @@
           :key="proposal.id"
           :proposal="proposal"
           :current-role="currentRole"
+          :is-demo-mode="isDemoMode"
           @sign="handleSignProposal"
           @refresh="refreshProposals"
         />
@@ -71,6 +77,7 @@ import ProposalCard from '@/components/ProposalCard.vue'
 const proposals = ref([])
 const statusFilter = ref('all')
 const currentRole = ref('operator_0')
+const isDemoMode = ref(false)
 
 // Timer
 let refreshTimer = null
@@ -183,13 +190,20 @@ const handleRoleChange = (event) => {
   currentRole.value = event.detail.role
 }
 
+// Listen for demo mode changes
+const handleDemoModeChange = (event) => {
+  isDemoMode.value = event.detail.isDemoMode
+}
+
 // Lifecycle
 onMounted(() => {
-  // Get current role
+  // Get current role and demo mode
   currentRole.value = localStorage.getItem('userRole') || 'operator_0'
+  isDemoMode.value = localStorage.getItem('demoMode') === 'true'
   
-  // Listen for role changes
+  // Listen for role and demo mode changes
   window.addEventListener('roleChanged', handleRoleChange)
+  window.addEventListener('demoModeChanged', handleDemoModeChange)
   
   // Initialize data
   refreshProposals()
@@ -203,12 +217,29 @@ onUnmounted(() => {
     clearInterval(refreshTimer)
   }
   window.removeEventListener('roleChanged', handleRoleChange)
+  window.removeEventListener('demoModeChanged', handleDemoModeChange)
 })
 </script>
 
 <style scoped>
 .proposals-page {
   padding: 1rem 0;
+}
+
+.demo-banner {
+  background: linear-gradient(135deg, #3498db, #2980b9);
+  color: white;
+  padding: 0.75rem 1.5rem;
+  text-align: center;
+  margin-bottom: 1rem;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(52, 152, 219, 0.3);
+  animation: pulse-banner 2s infinite alternate;
+}
+
+@keyframes pulse-banner {
+  from { opacity: 0.9; }
+  to { opacity: 1; }
 }
 
 .page-header {
