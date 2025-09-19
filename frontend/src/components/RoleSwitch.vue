@@ -26,6 +26,19 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 
+// 防抖函数实现
+function debounce(func, wait) {
+  let timeout
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout)
+      func(...args)
+    }
+    clearTimeout(timeout)
+    timeout = setTimeout(later, wait)
+  }
+}
+
 // 当前角色状态（无状态，仅存储在localStorage）
 const currentRole = ref('operator_0')
 
@@ -43,14 +56,17 @@ onMounted(() => {
   }
 })
 
-// 处理角色切换
-const handleRoleChange = () => {
+// 处理角色切换的核心逻辑
+const doRoleChange = () => {
   localStorage.setItem('userRole', currentRole.value)
   // 触发自定义事件通知其他组件
-  window.dispatchEvent(new CustomEvent('roleChanged', { 
-    detail: { role: currentRole.value } 
+  window.dispatchEvent(new CustomEvent('roleChanged', {
+    detail: { role: currentRole.value }
   }))
 }
+
+// 防抖的角色切换处理器 (300ms 防抖，避免快速切换导致的频繁事件)
+const handleRoleChange = debounce(doRoleChange, 300)
 </script>
 
 <style scoped>

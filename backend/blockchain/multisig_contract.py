@@ -14,23 +14,30 @@ logger = logging.getLogger(__name__)
 class MultiSigContract:
     """多签名合约集成类"""
     
-    def __init__(self, web3_manager):
+    def __init__(self, web3_manager, reward_pool_service=None):
         self.web3_manager = web3_manager
+        self.reward_pool_service = reward_pool_service  # 注入RewardPoolService依赖
         self.proposals = {}  # In-memory proposal storage for demo
         self.proposal_counter = 1
-        
-        # Reward pool state (simulated)
-        self.reward_pool_balance = 0.0  # ETH
-        self.contributions = {}  # manager_address -> contribution_data
         
         # Load contract configuration
         self.config = self._load_config()
         
-        # Initialize reward pool balance from persistent storage or Treasury tracking
-        self._initialize_reward_pool_balance()
-        
-        # Initialize contributions from persistent storage
-        self._initialize_contributions()
+        # 如果有RewardPoolService，使用它来管理状态；否则使用内部状态
+        if self.reward_pool_service:
+            # 使用RewardPoolService管理状态，不再自己维护
+            self.reward_pool_balance = 0.0  # 从service获取
+            self.contributions = {}  # 从service获取
+        else:
+            # 降级到内部管理（向后兼容）
+            self.reward_pool_balance = 0.0  # ETH
+            self.contributions = {}  # manager_address -> contribution_data
+            
+            # Initialize reward pool balance from persistent storage or Treasury tracking
+            self._initialize_reward_pool_balance()
+            
+            # Initialize contributions from persistent storage
+            self._initialize_contributions()
         
     def _load_config(self) -> Dict[str, Any]:
         """加载合约配置"""
@@ -106,6 +113,7 @@ class MultiSigContract:
                 "error": str(e)
             }
     
+
     def sign_proposal(self, proposal_id: int, signer_role: str) -> Dict[str, Any]:
         """签名多签名提案 - 现在检查管理员角色权限"""
         try:
@@ -211,6 +219,7 @@ class MultiSigContract:
                 "proposal_id": proposal_id
             }
     
+
     def get_proposal(self, proposal_id: int) -> Dict[str, Any]:
         """获取提案详情"""
         proposal = self.proposals.get(proposal_id)
@@ -406,7 +415,36 @@ class MultiSigContract:
         }
     
     def _update_contribution(self, manager_role: str, proposal_created_at: str):
-        """更新Manager贡献记录"""
+        """更新Manager贡献记录 - 通过RewardPoolService或内部方法"""
+        try:
+            if self.reward_pool_service:
+                # 使用RewardPoolService管理贡献度
+                current_time = datetime.now()
+                created_time = datetime.fromisoformat(proposal_created_at)
+                response_time_seconds = (current_time - created_time).total_seconds()
+                
+                # 委托给RewardPoolService处理
+                self.reward_pool_service.update_manager_contribution(
+                    manager_role, 
+                    signature_count=1,
+                    response_time=response_time_seconds
+                )
+                logger.info(f"✅ Contribution updated via RewardPoolService for {manager_role}")
+                return
+            
+            # 降级到内部方法（向后兼容）
+            self._update_contribution_legacy(manager_role, proposal_created_at)
+            
+        except Exception as e:
+            logger.error(f"❌ 更新贡献度失败: {e}")
+            # 尝试降级到内部方法
+            try:
+                self._update_contribution_legacy(manager_role, proposal_created_at)
+            except:
+                logger.error(f"❌ 降级到内部贡献度更新也失败")
+    
+    def _update_contribution_legacy(self, manager_role: str, proposal_created_at: str):
+        """内部贡献度更新方法（向后兼容）"""
         try:
             manager_address = self.web3_manager.accounts.get(manager_role)
             if not manager_address:

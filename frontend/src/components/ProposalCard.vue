@@ -72,9 +72,9 @@
           <h5>Manager Signature Status</h5>
         </div>
         <div class="signers-grid">
-          <div 
-            v-for="(signer, index) in signers" 
-            :key="index"
+          <div
+            v-for="(signer, index) in signers"
+            :key="`signer-${signer.address}-${proposal.id}`"
             class="signer-item"
             :class="{ 'signed': signer.signed }"
           >
@@ -92,19 +92,20 @@
                 <button 
                   v-if="!signer.signed && props.proposal.status === 'pending'"
                   @click="signProposal(index)"
-                  class="btn btn-primary btn-sm demo-btn"
+                  class="btn btn-primary btn-sm"
                   :disabled="signing || rejecting"
+                  :title="`Sign as ${signer.name}`"
                 >
-                  {{ signing ? '⏳ Signing...' : `✍️ Sign as ${signer.name}` }}
+                  {{ signing ? '⏳ Signing...' : '✅ Sign' }}
                 </button>
                 <button 
                   v-if="!signer.signed && props.proposal.status === 'pending' && !props.proposal.rejected_by"
                   @click="rejectProposal(index)"
-                  class="btn btn-danger btn-sm demo-btn"
+                  class="btn btn-danger btn-sm"
                   :disabled="signing || rejecting"
-                  style="margin-left: 0.5rem"
+                  :title="`Reject as ${signer.name}`"
                 >
-                  {{ rejecting ? '⏳ Rejecting...' : `❌ Reject as ${signer.name}` }}
+                  {{ rejecting ? '⏳ Rejecting...' : '❌ Reject' }}
                 </button>
               </template>
               
@@ -116,14 +117,13 @@
                   class="btn btn-primary btn-sm"
                   :disabled="signing || rejecting || props.proposal.status !== 'pending'"
                 >
-                  {{ signing ? '⏳ Signing...' : '✍️ Sign' }}
+                  {{ signing ? '⏳ Signing...' : '✅ Sign' }}
                 </button>
                 <button 
                   v-if="canReject(index)"
                   @click="rejectProposal(index)"
                   class="btn btn-danger btn-sm"
                   :disabled="signing || rejecting || props.proposal.status !== 'pending'"
-                  style="margin-left: 0.5rem"
                 >
                   {{ rejecting ? '⏳ Rejecting...' : '❌ Reject' }}
                 </button>
@@ -171,7 +171,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, toRefs, watchEffect } from 'vue'
 
 const props = defineProps({
   proposal: {
@@ -246,26 +246,23 @@ const progressPercentage = computed(() => {
   return (signedCount.value / requiredSignatures.value) * 100
 })
 
+// 使用稳定的signers数据，避免不必要的重新计算
 const signers = computed(() => {
-  // Use signed_by field from backend database
+  // 使用proposal.id和signed_by作为缓存key，只有这些真正变化时才重新计算
+  const proposalId = props.proposal.id
   const signatures = props.proposal.signed_by || []
-  return [
-    {
-      name: 'Manager 0',
-      address: '0x742d35Cc6634C0532925a3b8d8C7B7F0E3B9A3A4',
-      signed: signatures.includes('manager_0')
-    },
-    {
-      name: 'Manager 1', 
-      address: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
-      signed: signatures.includes('manager_1')
-    },
-    {
-      name: 'Manager 2',
-      address: '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC',
-      signed: signatures.includes('manager_2')
-    }
+
+  // 静态manager信息，避免每次都创建新对象
+  const managerInfo = [
+    { name: 'Manager 0', address: '0x69F652A7392F550F60775d5EDb67f3320764cFa6', id: 'manager_0' },
+    { name: 'Manager 1', address: '0xB524a6B6DA26d9f7eFF56CEF6093e79efe22ccc7', id: 'manager_1' },
+    { name: 'Manager 2', address: '0x2DF346b30BaBf5f9b4F50D3CaA6a766C29e355bc', id: 'manager_2' }
   ]
+
+  return managerInfo.map(manager => ({
+    ...manager,
+    signed: signatures.includes(manager.id)
+  }))
 })
 
 const finalSignerReward = computed(() => {
@@ -274,6 +271,12 @@ const finalSignerReward = computed(() => {
     const rewardedCount = props.proposal.all_signers_rewarded.length
     const rewardAmount = (rewardedCount * 0.01).toFixed(2)
     return `${rewardedCount} signers (${rewardAmount} ETH total)`
+  }
+  // 对于已批准的提案，如果没有all_signers_rewarded数据但有多个签名者，使用signed_by
+  if (props.proposal.status === 'approved' && props.proposal.signed_by && props.proposal.signed_by.length > 1) {
+    const signerCount = props.proposal.signed_by.length
+    const rewardAmount = (signerCount * 0.01).toFixed(2)
+    return `${signerCount} signers (${rewardAmount} ETH total)`
   }
   // 向后兼容：使用旧的final_signer字段
   if (props.proposal.reward_recipient || props.proposal.final_signer) {
@@ -304,23 +307,24 @@ const rejectionDetails = computed(() => {
   return 'Unknown'
 })
 
-// 方法
+// 优化角色检查方法，减少响应式依赖
 const canSign = (managerIndex) => {
-  // 检查当前角色是否为对应的manager
   const managerRole = `manager_${managerIndex}`
-  return props.currentRole === managerRole && 
-         props.proposal.status === 'pending' && 
-         !signers.value[managerIndex].signed &&
-         !signing.value && !rejecting.value // Prevent signing when already in progress
+  const signer = signers.value[managerIndex]
+
+  return props.currentRole === managerRole &&
+         props.proposal.status === 'pending' &&
+         !signer?.signed &&
+         !signing.value && !rejecting.value
 }
 
 const canReject = (managerIndex) => {
-  // 检查当前角色是否为对应的manager且提案未被拒绝
   const managerRole = `manager_${managerIndex}`
-  return props.currentRole === managerRole && 
-         props.proposal.status === 'pending' && 
+
+  return props.currentRole === managerRole &&
+         props.proposal.status === 'pending' &&
          !props.proposal.rejected_by &&
-         !signing.value && !rejecting.value // Prevent rejecting when other actions in progress
+         !signing.value && !rejecting.value
 }
 
 const signProposal = async (managerIndex) => {
@@ -645,6 +649,17 @@ const formatAddress = (address) => {
 .status-icon.pending {
   background-color: #6c757d;
   color: white;
+}
+
+.signer-action {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.signer-action .btn {
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 .card-actions {

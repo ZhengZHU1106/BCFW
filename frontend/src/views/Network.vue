@@ -3,20 +3,8 @@
     <div class="network-header">
       <h2>Blockchain Network Visualization</h2>
       <div class="network-controls">
-        <div class="layout-selector">
-          <label for="layout-select">Layout:</label>
-          <select id="layout-select" v-model="selectedLayout" @change="updateLayout">
-            <option value="star">Star</option>
-            <option value="grid">Grid</option>
-            <option value="circle">Circle</option>
-            <option value="random">Random</option>
-          </select>
-        </div>
         <button @click="simulateAttackFlow" class="btn btn-danger" :disabled="isSimulating">
           {{ isSimulating ? 'Simulating...' : 'Simulate Attack Flow' }}
-        </button>
-        <button @click="loadActiveProposals" class="btn btn-warning" :disabled="loadingProposals">
-          {{ loadingProposals ? 'Loading...' : 'Show Active Voting' }}
         </button>
         <button @click="refreshNetwork" class="btn btn-secondary">
           Refresh Network
@@ -52,9 +40,8 @@
       <NetworkCanvas 
         ref="networkCanvas"
         :nodes="nodes" 
-        :layout="selectedLayout"
+        layout="star"
         :attack-flow="attackFlowSteps"
-        :voting-data="managerVotes"
         @node-click="showNodeDetails"
         @layout-updated="onLayoutUpdated"
       />
@@ -164,66 +151,6 @@
       </div>
     </div>
 
-    <!-- Voting Progress Panel -->
-    <div v-if="votingSteps.length > 0 || loadingProposals" class="voting-panel">
-      <h3>Multi-Signature Voting</h3>
-      <div class="voting-overview">
-        <div class="voting-progress">
-          <div class="progress-circle">
-            <svg width="80" height="80">
-              <circle cx="40" cy="40" r="35" fill="none" stroke="#e0e0e0" stroke-width="6"/>
-              <circle 
-                cx="40" cy="40" r="35" fill="none" 
-                stroke="#28a745" stroke-width="6"
-                stroke-dasharray="220"
-                :stroke-dashoffset="220 - (220 * (Array.from(managerVotes.values()).filter(v => v.status === 'signed').length / 2))"
-                transform="rotate(-90 40 40)"
-              />
-            </svg>
-            <div class="progress-text">
-              {{ Array.from(managerVotes.values()).filter(v => v.status === 'signed').length }}/2
-            </div>
-          </div>
-          <div class="voting-status">
-            <span v-if="votingSteps.some(s => s.action === 'proposal_ready')" class="status-approved">✅ Ready for Execution</span>
-            <span v-else-if="votingSteps.some(s => s.action === 'real_proposal_status')" class="status-voting">🗳️ Active Proposal</span>
-            <span v-else-if="votingSteps.some(s => s.action === 'no_active_proposals')" class="status-idle">💤 No Active Proposals</span>
-            <span v-else-if="loadingProposals" class="status-loading">⏳ Loading...</span>
-            <span v-else class="status-pending">⏳ Awaiting Signatures</span>
-          </div>
-        </div>
-      </div>
-      
-      <div class="manager-votes">
-        <h4>Manager Signatures</h4>
-        <div class="votes-list">
-          <div v-for="node in nodes.filter(n => n.type === 'manager')" :key="node.id" class="vote-item">
-            <div class="manager-info">
-              <span class="manager-name">{{ node.id }}</span>
-              <span class="manager-address">{{ node.address ? node.address.slice(0, 8) + '...' : '' }}</span>
-            </div>
-            <div class="vote-status">
-              <span v-if="managerVotes.get(node.id)?.status === 'signed'" class="status-signed">✅ Signed</span>
-              <span v-else-if="managerVotes.get(node.id)?.status === 'pending'" class="status-pending">⏳ Pending</span>
-              <span v-else class="status-inactive">⚪ Not Started</span>
-            </div>
-          </div>
-        </div>
-      </div>
-      
-      <div v-if="votingSteps.length > 0" class="voting-steps">
-        <h4>Recent Activity</h4>
-        <div class="steps-list">
-          <div v-for="step in votingSteps" :key="`vote-${step.step}`" class="voting-step">
-            <div class="step-indicator">{{ step.step }}</div>
-            <div class="step-details">
-              <p>{{ step.description }}</p>
-              <span v-if="step.progress" class="step-progress">Progress: {{ step.progress.toFixed(0) }}%</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -235,17 +162,12 @@ import NodeDetail from '@/components/NodeDetail.vue'
 
 // Reactive data
 const nodes = ref([])
-const selectedLayout = ref('star')
 const selectedNode = ref(null)
 const nodeDetails = ref(null)
 const showNodeModal = ref(false)
 const attackFlowSteps = ref([])
 const isSimulating = ref(false)
-const loadingProposals = ref(false)
-const votingSteps = ref([])
-const managerVotes = ref(new Map())
 const isLoading = ref(false)
-const activeProposals = ref([])
 
 // Node management modal data
 const showCreateModal = ref(false)
@@ -282,7 +204,7 @@ const loadNetworkTopology = async () => {
       setTimeout(() => {
         if (networkCanvas.value) {
           console.log('Forcing canvas layout update')
-          networkCanvas.value.updateLayout(selectedLayout.value)
+          networkCanvas.value.updateLayout('star')
         }
       }, 50)
     } else {
@@ -325,17 +247,6 @@ const refreshNodeDetails = async () => {
   }
 }
 
-// Update layout
-const updateLayout = () => {
-  if (networkCanvas.value) {
-    networkCanvas.value.updateLayout(selectedLayout.value)
-  }
-}
-
-// Layout updated callback
-const onLayoutUpdated = (layout) => {
-  selectedLayout.value = layout
-}
 
 // Simulate attack flow
 const simulateAttackFlow = async () => {
@@ -345,130 +256,107 @@ const simulateAttackFlow = async () => {
   attackFlowSteps.value = []
   
   try {
-    const result = await networkAPI.simulateAttackFlow({
-      attack_type: 'network_scan',
-      confidence: 0.85
-    })
+    // Create a comprehensive attack flow simulation
+    // Get all available nodes for the attack
+    const availableNodes = nodes.value.filter(n => n.type !== 'treasury')
+    const targetNodes = availableNodes.slice(0, Math.min(10, availableNodes.length))
     
-    if (result.success) {
-      attackFlowSteps.value = result.data.flow_steps
-      
-      // Animate the attack flow on the canvas
-      if (networkCanvas.value) {
-        networkCanvas.value.animateAttackFlow(attackFlowSteps.value)
+    const simulationSteps = [
+      {
+        step: 1,
+        action: 'external_attack',
+        description: 'External attacker initiates malicious network scan',
+        node: 'external_attacker',
+        targetNodes: targetNodes.map(n => n.id), // Add target nodes for highlighting
+        confidence: 0.85,
+        timestamp: Date.now()
+      },
+      {
+        step: 2,
+        action: 'detection',
+        description: 'AI system detects suspicious network activity',
+        node: 'ai_detector',
+        confidence: 0.85,
+        timestamp: Date.now() + 1000
+      },
+      {
+        step: 3,
+        action: 'operator_alert',
+        description: 'Alert sent to security operators for analysis',
+        node: nodes.value.find(n => n.type === 'operator')?.id || 'operator_0',
+        confidence: 0.85,
+        timestamp: Date.now() + 2000
+      },
+      {
+        step: 4,
+        action: 'proposal_creation',
+        description: 'Security proposal created for manager approval',
+        node: nodes.value.find(n => n.type === 'operator')?.id || 'operator_0',
+        timestamp: Date.now() + 3000
+      },
+      {
+        step: 5,
+        action: 'multisig_voting',
+        description: 'Managers review and vote on security response',
+        nodes: nodes.value.filter(n => n.type === 'manager').map(n => n.id).slice(0, 3),
+        timestamp: Date.now() + 4000
+      },
+      {
+        step: 6,
+        action: 'execution',
+        description: 'Security response executed - threat blocked',
+        node: 'security_system',
+        timestamp: Date.now() + 6000
+      },
+      {
+        step: 7,
+        action: 'blockchain_audit',
+        description: 'Action recorded on blockchain for transparency',
+        node: 'blockchain',
+        timestamp: Date.now() + 7000
       }
+    ]
+    
+    attackFlowSteps.value = simulationSteps
+    
+    // Animate the attack flow on the canvas with enhanced logic
+    if (networkCanvas.value) {
+      networkCanvas.value.animateAttackFlow(simulationSteps)
     }
+    
   } catch (error) {
     console.error('Error simulating attack flow:', error)
+    // Fallback to original API call if needed
+    try {
+      const result = await networkAPI.simulateAttackFlow({
+        attack_type: 'network_scan',
+        confidence: 0.85
+      })
+      
+      if (result.success) {
+        attackFlowSteps.value = result.data.flow_steps
+        if (networkCanvas.value) {
+          networkCanvas.value.animateAttackFlow(attackFlowSteps.value)
+        }
+      }
+    } catch (fallbackError) {
+      console.error('Fallback attack flow also failed:', fallbackError)
+    }
   } finally {
     isSimulating.value = false
   }
 }
 
-// Load active proposals and display real voting status
-const loadActiveProposals = async () => {
-  if (loadingProposals.value) return
-  
-  loadingProposals.value = true
-  managerVotes.value.clear()
-  votingSteps.value = []
-  activeProposals.value = []
-  
-  try {
-    // Load active proposals from API
-    const response = await fetch('/api/proposals')
-    const result = await response.json()
-    
-    if (result.success) {
-      const proposals = result.data || []
-      activeProposals.value = proposals.filter(p => p.status === 'pending')
-      
-      if (activeProposals.value.length === 0) {
-        votingSteps.value.push({
-          step: 1,
-          action: 'no_active_proposals',
-          description: 'No active proposals requiring signatures',
-          progress: 0
-        })
-        return
-      }
-      
-      // Focus on the most recent active proposal
-      const currentProposal = activeProposals.value[0]
-      
-      // Get manager nodes
-      const managerNodes = nodes.value.filter(node => node.type === 'manager')
-      
-      // Initialize voting states based on actual proposal status
-      managerNodes.forEach((node, index) => {
-        const managerRole = `manager_${index}`
-        const hasSigned = currentProposal.signatures && currentProposal.signatures.includes(managerRole)
-        
-        managerVotes.value.set(node.id, {
-          status: hasSigned ? 'signed' : 'pending',
-          timestamp: hasSigned ? new Date() : null,
-          managerRole: managerRole
-        })
-      })
-      
-      // Calculate progress
-      const signedCount = currentProposal.signatures ? currentProposal.signatures.length : 0
-      const requiredSignatures = 2
-      const progress = (signedCount / requiredSignatures) * 100
-      
-      // Add voting status
-      votingSteps.value.push({
-        step: 1,
-        action: 'real_proposal_status',
-        description: `Proposal #${currentProposal.id}: ${currentProposal.threat_type} threat`,
-        proposalId: currentProposal.id,
-        progress: progress
-      })
-      
-      votingSteps.value.push({
-        step: 2,
-        action: 'signature_status',
-        description: `Signatures: ${signedCount}/${requiredSignatures} collected`,
-        progress: progress
-      })
-      
-      if (progress >= 100) {
-        votingSteps.value.push({
-          step: 3,
-          action: 'proposal_ready',
-          description: 'Proposal ready for execution',
-          progress: 100
-        })
-      }
-      
-      // Update canvas
-      if (networkCanvas.value) {
-        networkCanvas.value.updateVotingStates(managerVotes.value)
-      }
-      
-    } else {
-      throw new Error(result.message || 'Failed to load proposals')
-    }
-    
-  } catch (error) {
-    console.error('Error loading active proposals:', error)
-    votingSteps.value.push({
-      step: 1,
-      action: 'error',
-      description: 'Failed to load proposal data',
-      progress: 0
-    })
-  } finally {
-    loadingProposals.value = false
-  }
-}
 
 // Refresh network
 const refreshNetwork = async () => {
   await loadNetworkTopology()
   attackFlowSteps.value = []
-  managerVotes.value.clear()
-  votingSteps.value = []
+  
+  // Clear virtual nodes
+  if (networkCanvas.value) {
+    networkCanvas.value.clearVirtualNodes()
+  }
 }
 
 // Node management methods
@@ -483,34 +371,50 @@ const closeCreateNodeModal = () => {
 }
 
 const createNode = async () => {
+  console.log('🚀 createNode function called')
+  console.log('newNode.value:', newNode.value)
+  
   if (!newNode.value.type) {
     console.error('Please select a node type')
+    alert('Please select a node type')
     return
   }
 
+  console.log('Starting node creation...')
   isCreatingNode.value = true
+  
   try {
+    console.log('Calling networkAPI.createNode with:', {
+      type: newNode.value.type,
+      name: newNode.value.name
+    })
+    
     const result = await networkAPI.createNode({
       type: newNode.value.type,
       name: newNode.value.name
     })
+    
+    console.log('API Response:', result)
 
     if (result.success) {
-      console.log('Node created successfully:', result.data)
+      console.log('✅ Node created successfully:', result.data)
       closeCreateNodeModal()
       await loadNetworkTopology() // Refresh the network
       // Wait a bit for the UI to update
       await new Promise(resolve => setTimeout(resolve, 100))
-      console.log(`✅ Node ${result.data.node_id} created successfully with ${result.data.balance} ETH`)
-      // Show success message without blocking alert
-      const message = `✅ Node ${result.data.node_id} created successfully with ${result.data.balance} ETH`
-      console.log(message)
+      const successMessage = `✅ Node ${result.data.node_id} created successfully with ${result.data.balance} ETH`
+      console.log(successMessage)
+      alert(successMessage) // Show success alert
     } else {
-      console.error('Failed to create node: ' + (result.error || 'Unknown error'))
+      const errorMessage = 'Failed to create node: ' + (result.error || 'Unknown error')
+      console.error(errorMessage)
+      alert(errorMessage) // Show error alert
     }
   } catch (error) {
-    console.error('Error creating node:', error)
+    console.error('❌ Error creating node:', error)
+    alert(`Error creating node: ${error.message || error}`) // Show error alert
   } finally {
+    console.log('Finishing createNode, setting isCreatingNode to false')
     isCreatingNode.value = false
   }
 }
@@ -592,24 +496,6 @@ onMounted(() => {
   gap: 1rem;
 }
 
-.layout-selector {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.layout-selector label {
-  font-weight: 500;
-  color: #495057;
-}
-
-.layout-selector select {
-  padding: 0.375rem 0.75rem;
-  border: 1px solid #ced4da;
-  border-radius: 4px;
-  background-color: white;
-  color: #495057;
-}
 
 .network-stats {
   display: grid;
@@ -1080,6 +966,18 @@ onMounted(() => {
   font-size: 0.85rem;
 }
 
+.status-error {
+  color: #dc3545;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.retry-btn {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  padding: 0.25rem 0.5rem;
+}
+
 .voting-steps {
   border-top: 1px solid #e9ecef;
   padding-top: 1rem;
@@ -1105,6 +1003,21 @@ onMounted(() => {
   background: #f8f9fa;
   border-radius: 6px;
   border-left: 3px solid #007bff;
+}
+
+.voting-step.step-error {
+  background: #f8d7da;
+  border-left-color: #dc3545;
+}
+
+.voting-step.step-no_active_proposals {
+  background: #fff3cd;
+  border-left-color: #ffc107;
+}
+
+.voting-step.step-proposal_ready {
+  background: #d4edda;
+  border-left-color: #28a745;
 }
 
 .step-indicator {

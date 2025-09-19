@@ -78,6 +78,7 @@ const nodePositions = ref(new Map())
 const hoveredNode = ref(null)
 const animationFrame = ref(null)
 const attackAnimations = ref([])
+const virtualNodePositions = ref(new Map())
 
 // Constants
 const NODE_RADIUS = 20
@@ -304,6 +305,34 @@ const drawNode = (node, position) => {
   ctx.value.fillText(`${node.balance.toFixed(2)} ETH`, x, y + radius + 35)
 }
 
+// Draw virtual nodes for attack flow
+const drawVirtualNode = (nodeId, position) => {
+  if (!ctx.value) return
+  
+  const x = position.x
+  const y = position.y
+  const radius = NODE_RADIUS + 5  // Slightly larger for virtual nodes
+  
+  // Draw node circle with special style
+  ctx.value.beginPath()
+  ctx.value.arc(x, y, radius, 0, 2 * Math.PI)
+  ctx.value.fillStyle = position.color
+  ctx.value.fill()
+  
+  // Draw dashed border for virtual nodes
+  ctx.value.setLineDash([5, 5])
+  ctx.value.strokeStyle = '#fff'
+  ctx.value.lineWidth = 3
+  ctx.value.stroke()
+  ctx.value.setLineDash([]) // Reset line dash
+  
+  // Draw label with emoji
+  ctx.value.font = 'bold 10px Arial'
+  ctx.value.fillStyle = '#fff'
+  ctx.value.textAlign = 'center'
+  ctx.value.fillText(position.label, x, y + radius + 15)
+}
+
 // Draw connections between nodes
 const drawConnections = () => {
   if (!ctx.value || props.nodes.length === 0) return
@@ -353,21 +382,31 @@ const drawAttackFlow = () => {
   if (!ctx.value) return
   
   attackAnimations.value.forEach((animation, index) => {
-    const progress = (Date.now() - animation.startTime) / ATTACK_ANIMATION_DURATION
+    const duration = animation.duration || ATTACK_ANIMATION_DURATION
+    const progress = Math.min((Date.now() - animation.startTime) / duration, 1)
     
     if (progress >= 1) {
       attackAnimations.value.splice(index, 1)
       return
     }
     
-    const startPos = nodePositions.value.get(animation.from)
-    const endPos = nodePositions.value.get(animation.to)
+    // Get positions from virtual nodes or regular nodes
+    let startPos = nodePositions.value.get(animation.from)
+    let endPos = nodePositions.value.get(animation.to)
     
-    if (startPos && endPos) {
+    // Check virtual nodes if not found in regular nodes
+    if (!startPos && animation.virtualNodes) {
+      startPos = animation.virtualNodes.get(animation.from)
+    }
+    if (!endPos && animation.virtualNodes) {
+      endPos = animation.virtualNodes.get(animation.to)
+    }
+    
+    if (startPos && endPos && progress >= 0) {
       const currentX = startPos.x + (endPos.x - startPos.x) * progress
       const currentY = startPos.y + (endPos.y - startPos.y) * progress
       
-      // Draw attack line
+      // Draw attack line with gradient
       ctx.value.strokeStyle = '#dc3545'
       ctx.value.lineWidth = 4
       ctx.value.globalAlpha = 0.8
@@ -410,6 +449,11 @@ const render = () => {
     if (position) {
       drawNode(node, position)
     }
+  })
+  
+  // Draw virtual nodes during attack flow
+  virtualNodePositions.value.forEach((position, nodeId) => {
+    drawVirtualNode(nodeId, position)
   })
   
   // Continue animation if needed
@@ -498,19 +542,75 @@ const updateLayout = (newLayout) => {
 const animateAttackFlow = (flowSteps) => {
   attackAnimations.value = []
   
+  // Add virtual nodes for attack flow
+  const virtualNodes = new Map()
+  
+  // External attacker position (outside the network)
+  virtualNodes.set('external_attacker', {
+    x: 50,
+    y: 50,
+    color: '#dc3545',
+    label: '🔥 External Attacker'
+  })
+  
+  // AI detector position
+  virtualNodes.set('ai_detector', {
+    x: canvasWidth.value - 100,
+    y: 100,
+    color: '#007bff',
+    label: '🤖 AI Detector'
+  })
+  
+  // Security system position
+  virtualNodes.set('security_system', {
+    x: canvasWidth.value - 50,
+    y: canvasHeight.value - 100,
+    color: '#28a745',
+    label: '🛡️ Security System'
+  })
+  
+  // Blockchain position
+  virtualNodes.set('blockchain', {
+    x: canvasWidth.value / 2,
+    y: canvasHeight.value - 50,
+    color: '#6f42c1',
+    label: '⛓️ Blockchain'
+  })
+  
   // Create animations based on flow steps
   flowSteps.forEach((step, index) => {
-    if (step.node && step.step > 1) {
+    if (step.nodes) {
+      // Handle multisig voting (multiple nodes)
+      step.nodes.forEach((nodeId, nodeIndex) => {
+        if (index > 0) {
+          const prevStep = flowSteps[index - 1]
+          attackAnimations.value.push({
+            from: prevStep.node || prevStep.nodes?.[0],
+            to: nodeId,
+            startTime: Date.now() + (index * 1000) + (nodeIndex * 200),
+            duration: 800,
+            virtualNodes
+          })
+        }
+      })
+    } else if (step.node && index > 0) {
       const prevStep = flowSteps[index - 1]
-      if (prevStep && prevStep.node) {
+      const fromNode = prevStep.nodes?.[prevStep.nodes.length - 1] || prevStep.node
+      
+      if (fromNode) {
         attackAnimations.value.push({
-          from: prevStep.node,
+          from: fromNode,
           to: step.node,
-          startTime: Date.now() + index * 500
+          startTime: Date.now() + index * 1000,
+          duration: 800,
+          virtualNodes
         })
       }
     }
   })
+  
+  // Store virtual nodes for rendering
+  virtualNodePositions.value = virtualNodes
   
   if (attackAnimations.value.length > 0) {
     render()
@@ -526,6 +626,13 @@ const updateVotingStates = (votingData) => {
 // Clear voting states
 const clearVotingStates = () => {
   // This will trigger a re-render without voting states
+  render()
+}
+
+// Clear virtual nodes
+const clearVirtualNodes = () => {
+  virtualNodePositions.value.clear()
+  attackAnimations.value = []
   render()
 }
 
@@ -588,7 +695,8 @@ defineExpose({
   updateLayout,
   animateAttackFlow,
   updateVotingStates,
-  clearVotingStates
+  clearVotingStates,
+  clearVirtualNodes
 })
 </script>
 

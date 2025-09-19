@@ -5,15 +5,6 @@
         <h4>📊 Confidence Score</h4>
       </div>
       
-      <div class="formula-section">
-        <div class="formula">
-          Confidence(x) = σ(W<sub>2</sub> · ReLU(W<sub>1</sub> · x + b<sub>1</sub>) + b<sub>2</sub>)
-        </div>
-        <div class="formula-note">
-          Where x = 77-dimensional feature vector
-        </div>
-      </div>
-      
       <div class="thresholds-quick">
         <div class="threshold-line high">&gt; 90%: Auto Response</div>
         <div class="threshold-line medium-high">80-90%: Auto Proposal</div>
@@ -35,12 +26,23 @@
 
 <style scoped>
 .tooltip-container {
-  position: absolute;
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  margin-bottom: 8px;
-  z-index: 1000;
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
+  max-width: 320px;
+}
+
+/* Right edge detection */
+.tooltip-container.align-right {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+/* Left edge detection */
+.tooltip-container.align-left {
+  left: 0;
+  transform: none;
 }
 
 .tooltip-content {
@@ -60,28 +62,6 @@
   color: #ffc107;
 }
 
-.formula-section {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
-  padding: 0.75rem;
-  margin-bottom: 0.75rem;
-  border-left: 3px solid #007bff;
-}
-
-.formula {
-  font-family: 'Courier New', monospace;
-  font-size: 0.9rem;
-  color: #e3f2fd;
-  margin-bottom: 0.25rem;
-  text-align: center;
-}
-
-.formula-note {
-  font-size: 0.75rem;
-  color: #b0bec5;
-  text-align: center;
-  font-style: italic;
-}
 
 .thresholds-quick {
   display: flex;
@@ -144,17 +124,18 @@
 
 /* Animation */
 .tooltip-container {
-  animation: tooltipFadeIn 0.2s ease-out;
+  animation: tooltipFadeIn 0.15s ease-out;
+  transition: all 0.1s ease;
 }
 
 @keyframes tooltipFadeIn {
   from {
     opacity: 0;
-    transform: translateX(-50%) translateY(4px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    transform: translateY(0);
   }
 }
 

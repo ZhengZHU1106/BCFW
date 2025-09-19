@@ -92,6 +92,7 @@ proposal_service = ProposalService()
 system_service = SystemInfoService()
 reward_pool_service = RewardPoolService()
 
+
 @app.get("/")
 async def root():
     """根路径，返回API状态信息"""
@@ -179,7 +180,13 @@ async def sign_proposal(proposal_id: int, manager_role: str, db: Session = Depen
         if manager_role not in valid_managers:
             raise HTTPException(status_code=400, detail=f"无效的Manager角色: {manager_role}")
         
+        # 使用ProposalService处理签名
         result = proposal_service.sign_proposal(db, proposal_id, manager_role)
+        
+        # 检查ProposalService的返回结果
+        if not result.get("success", False):
+            raise ValueError(result.get("error", "签名失败"))
+        
         return {
             "success": True,
             "data": result,
@@ -204,6 +211,7 @@ async def reject_proposal(proposal_id: int, request: dict, db: Session = Depends
         if manager_role not in valid_managers:
             raise HTTPException(status_code=400, detail=f"无效的Manager角色: {manager_role}")
         
+        # 使用ProposalService处理拒绝
         result = proposal_service.reject_proposal(db, proposal_id, manager_role)
         return {
             "success": True,

@@ -161,21 +161,6 @@
       </div>
     </div>
 
-    <!-- Quick Actions -->
-    <div class="quick-actions card">
-      <h3 class="card-title">Quick Actions</h3>
-      <div class="actions-grid">
-        <button @click="simulateAttack" class="btn btn-danger" :disabled="isSimulating">
-          {{ isSimulating ? 'Simulating...' : 'Simulate Attack' }}
-        </button>
-        <router-link to="/proposals" class="btn btn-primary">
-          View Proposals
-        </router-link>
-        <router-link to="/history" class="btn btn-secondary">
-          View History
-        </router-link>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -193,8 +178,6 @@ const lastUpdate = ref('-')
 // Account information
 const accounts = ref([])
 
-// Attack simulation status
-const isSimulating = ref(false)
 
 // Security flow status
 const securityFlowStages = ref([
@@ -207,6 +190,9 @@ const securityFlowStages = ref([
 const currentFlowStage = ref(0) // 0 = idle/monitoring, 1 = detection, etc.
 const currentFlowStatusText = ref('System Ready - Monitoring Network')
 const flowStatusClass = ref('idle')
+
+// Status update timers
+let stageTimer = null
 
 // Reward Pool Management
 const rewardPoolInfo = ref({
@@ -280,6 +266,9 @@ const fetchSystemStatus = async () => {
     await fetchRewardPoolInfo()
     await fetchManagerContributions()
     
+    // Check for recent system activity to update flow status
+    await checkSystemActivity()
+    
   } catch (error) {
     console.error('Failed to fetch system status:', error)
     console.error('Error details:', error.response?.data || error.message)
@@ -350,26 +339,6 @@ const depositToPool = async () => {
 
 // 手动分配功能已移除 - 现在使用自动分配机制
 
-// Simulate attack
-const simulateAttack = async () => {
-  if (isSimulating.value) return
-  
-  isSimulating.value = true
-  try {
-    const response = await systemAPI.simulateAttack()
-    if (response.success && response.data) {
-      const threatInfo = response.data.threat_info
-      alert(`Attack simulation successful!\nActual Type: ${threatInfo.true_label}\nConfidence: ${(threatInfo.confidence * 100).toFixed(1)}%\nModel Prediction: ${threatInfo.predicted_class}`)
-    } else {
-      throw new Error('Invalid response format')
-    }
-  } catch (error) {
-    console.error('Attack simulation failed:', error)
-    alert('Attack simulation failed. Please check backend service.')
-  } finally {
-    isSimulating.value = false
-  }
-}
 
 // Format address
 const formatAddress = (address) => {
@@ -381,6 +350,56 @@ const formatAddress = (address) => {
 const formatBalance = (balance) => {
   if (balance === null || balance === undefined) return '0.0000'
   return parseFloat(balance).toFixed(4)
+}
+
+// Update security flow status
+const updateSecurityFlowStage = (stage, statusText, statusClass = null) => {
+  const stageIndex = securityFlowStages.value.findIndex(s => s.id === stage)
+  if (stageIndex !== -1) {
+    currentFlowStage.value = stageIndex
+    currentFlowStatusText.value = statusText
+    flowStatusClass.value = statusClass || stage
+    
+    // Auto return to monitoring after some time for non-monitoring stages
+    if (stage !== 'monitoring') {
+      clearTimeout(stageTimer)
+      stageTimer = setTimeout(() => {
+        updateSecurityFlowStage('monitoring', 'System Ready - Monitoring Network', 'idle')
+      }, 15000) // Return to monitoring after 15 seconds
+    }
+  }
+}
+
+// Check for recent system activity
+const checkSystemActivity = async () => {
+  try {
+    const result = await systemAPI.getDetectionLogs()
+    if (result.success && result.data.length > 0) {
+      const recentLog = result.data[0]
+      const logTime = new Date(recentLog.detected_at)
+      const now = new Date()
+      const timeDiff = now - logTime
+      
+      // If there's activity within the last 30 seconds, update status accordingly
+      if (timeDiff < 30000) {
+        if (recentLog.response_level === 'automatic_response') {
+          updateSecurityFlowStage('execution', 'Automatic Response Executed', 'active')
+        } else if (recentLog.proposal_id) {
+          updateSecurityFlowStage('voting', 'Proposal Created - Awaiting Signatures', 'warning')
+        } else if (recentLog.confidence > 0.7) {
+          updateSecurityFlowStage('detection', 'Threat Detected - Analyzing', 'warning')
+        }
+      }
+    }
+    
+    // Also check for active proposals
+    const proposalsResult = await systemAPI.getProposals()
+    if (proposalsResult.success && proposalsResult.data.pending.length > 0) {
+      updateSecurityFlowStage('voting', `${proposalsResult.data.pending.length} Active Proposals - Awaiting Signatures`, 'warning')
+    }
+  } catch (error) {
+    console.error('Failed to check system activity:', error)
+  }
 }
 
 // Lifecycle

@@ -22,6 +22,19 @@ function deriveAddress(index) {
 async function main() {
     console.log('🚀 Creating MultiSigProposal contract configuration...');
     
+    // 添加基本验证（从deploy_multisig.js借鉴）
+    if (MANAGER_INDICES.length === 0) {
+        throw new Error('No manager indices specified');
+    }
+    
+    if (THRESHOLD > MANAGER_INDICES.length) {
+        throw new Error(`Threshold (${THRESHOLD}) cannot be greater than number of managers (${MANAGER_INDICES.length})`);
+    }
+    
+    if (THRESHOLD === 0) {
+        throw new Error('Threshold must be greater than 0');
+    }
+    
     // Generate Manager addresses (simplified)
     const managerAddresses = MANAGER_INDICES.map(index => {
         // These should match the actual Ganache addresses

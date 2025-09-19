@@ -15,7 +15,7 @@ class MultiSigContract {
   ],
   "threshold": 2,
   "deployer": "0xE11BA2b4D45Eaed5996Cd0823791E0C93114882d",
-  "deployedAt": "2025-09-02T07:44:35.316Z",
+  "deployedAt": "2025-09-19T09:55:08.207Z",
   "network": "ganache-local",
   "chainId": 1337,
   "gasUsed": 2100000

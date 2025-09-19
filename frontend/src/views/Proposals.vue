@@ -54,9 +54,9 @@
       </div>
       
       <div v-else class="proposals-grid">
-        <ProposalCard 
-          v-for="proposal in filteredProposals" 
-          :key="proposal.id"
+        <ProposalCard
+          v-for="proposal in filteredProposals"
+          :key="`proposal-${proposal.id}-${proposal.status}`"
           :proposal="proposal"
           :current-role="currentRole"
           :is-demo-mode="isDemoMode"
@@ -109,14 +109,43 @@ const proposalStats = computed(() => {
   return stats
 })
 
-// Refresh proposal list
+// 智能差异更新函数，避免完全替换数组
+const mergeProposals = (currentProposals, newProposals) => {
+  const newMap = new Map(newProposals.map(p => [p.id, p]))
+  const currentMap = new Map(currentProposals.map(p => [p.id, p]))
+
+  // 更新现有提案或添加新的
+  const mergedProposals = []
+
+  // 处理新的和更新的提案
+  for (const newProposal of newProposals) {
+    const existing = currentMap.get(newProposal.id)
+    if (existing) {
+      // 只有在真正有变化时才更新
+      if (JSON.stringify(existing) !== JSON.stringify(newProposal)) {
+        mergedProposals.push({ ...newProposal })
+      } else {
+        // 保持现有对象引用，避免重渲染
+        mergedProposals.push(existing)
+      }
+    } else {
+      // 新提案
+      mergedProposals.push({ ...newProposal })
+    }
+  }
+
+  return mergedProposals
+}
+
+// Refresh proposal list with smart update
 const refreshProposals = async () => {
   try {
     const result = await systemAPI.getProposals()
     if (result.success && result.data) {
-      // Use history which contains all proposals (pending, approved, rejected)
-      // This fixes the issue where approved/rejected proposals weren't showing
-      proposals.value = result.data.history || []
+      const newProposals = result.data.history || []
+
+      // 使用智能合并而不是直接替换
+      proposals.value = mergeProposals(proposals.value, newProposals)
     }
   } catch (error) {
     console.error('Failed to refresh proposal list:', error)

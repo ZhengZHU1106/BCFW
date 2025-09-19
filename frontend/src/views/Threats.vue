@@ -3,7 +3,7 @@
     <div class="page-header">
       <h2>Threat Detection</h2>
       <button @click="simulateAttack" class="btn btn-danger" :disabled="isSimulating">
-        {{ isSimulating ? 'Simulating...' : '🚨 Simulate Attack' }}
+        {{ isSimulating ? 'Simulating...' : 'Simulate Attack' }}
       </button>
     </div>
 
@@ -61,7 +61,7 @@
     <!-- Threat List -->
     <div class="threats-list card">
       <div class="card-header">
-        <h3 class="card-title">Threat Detection Records</h3>
+        <h3 class="card-title">Recent Threat Detections</h3>
         <button @click="refreshThreats" class="btn btn-secondary btn-sm">
           Refresh
         </button>
@@ -80,17 +80,20 @@
               <th>Target IP</th>
               <th>
                 Confidence
-                <div class="confidence-info-wrapper">
+                <div class="confidence-info-wrapper" ref="tooltipWrapper">
                   <button 
                     @click="showConfidenceExplanation = true"
-                    @mouseenter="showConfidenceTooltip = true"
+                    @mouseenter="handleTooltipShow"
                     @mouseleave="showConfidenceTooltip = false"
                     class="confidence-info-btn"
                     title="Learn how confidence scores are calculated"
                   >
                     ℹ️
                   </button>
-                  <ConfidenceTooltip v-if="showConfidenceTooltip" />
+                  <ConfidenceTooltip 
+                    v-if="showConfidenceTooltip" 
+                    :class="tooltipAlignClass" 
+                  />
                 </div>
               </th>
               <th>Response Level</th>
@@ -98,7 +101,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="threat in threats" :key="threat.id" @click="showThreatDetails(threat)" class="threat-row">
+            <tr v-for="threat in threats" :key="`threat-${threat.id}-${threat.status}`" @click="showThreatDetails(threat)" class="threat-row">
               <td>{{ formatTime(threat.detected_at) }}</td>
               <td>
                 <span class="threat-type" :class="{'threat-type-benign': threat.threat_type === 'Benign'}">{{ threat.threat_type }}</span>
@@ -145,7 +148,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { systemAPI } from '@/api/system'
 import ThreatAlert from '@/components/ThreatAlert.vue'
 import ConfidenceExplanationModal from '@/components/ConfidenceExplanationModal.vue'
@@ -174,6 +177,48 @@ const currentRole = ref('operator')
 const showConfidenceExplanation = ref(false)
 const showConfidenceTooltip = ref(false)
 const selectedThreat = ref(null)
+const tooltipWrapper = ref(null)
+const tooltipAlignClass = ref('')
+
+// 响应式tooltip位置状态
+const tooltipPosition = ref({ left: 0, top: 0, show: false })
+
+// Handle tooltip display with Vue-friendly approach
+const handleTooltipShow = (event) => {
+  if (!event || !event.target) return
+
+  showConfidenceTooltip.value = true
+
+  // 使用Vue的响应式方式处理定位，避免直接DOM操作
+  nextTick(() => {
+    const btnRect = event.target.getBoundingClientRect()
+    const tooltipHeight = 160
+    const tooltipWidth = 320
+    const margin = 20
+
+    // Calculate position
+    let left = btnRect.left + btnRect.width / 2 - tooltipWidth / 2
+    let top = btnRect.top - tooltipHeight - 10
+
+    // Boundary detection
+    if (left < margin) {
+      left = margin
+      tooltipAlignClass.value = 'align-left'
+    } else if (left + tooltipWidth > window.innerWidth - margin) {
+      left = window.innerWidth - tooltipWidth - margin
+      tooltipAlignClass.value = 'align-right'
+    } else {
+      tooltipAlignClass.value = ''
+    }
+
+    if (top < margin) {
+      top = btnRect.bottom + 10
+    }
+
+    // 使用响应式状态而不是直接设置DOM样式
+    tooltipPosition.value = { left, top, show: true }
+  })
+}
 
 // Timer
 let refreshTimer = null
@@ -215,17 +260,52 @@ const simulateAttack = async () => {
 }
 
 // Refresh threat list
+// 智能合并威胁数据，避免不必要的DOM重建
+const mergeThreats = (currentThreats, newThreats) => {
+  const newMap = new Map(newThreats.map(t => [t.id, t]))
+  const currentMap = new Map(currentThreats.map(t => [t.id, t]))
+
+  const mergedThreats = []
+
+  // 处理新的和更新的威胁
+  for (const newThreat of newThreats) {
+    const existing = currentMap.get(newThreat.id)
+    if (existing) {
+      // 检查是否有实质性变化
+      const hasChanges = existing.status !== newThreat.status ||
+                        existing.confidence !== newThreat.confidence ||
+                        existing.response_level !== newThreat.response_level
+
+      if (hasChanges) {
+        mergedThreats.push({
+          ...newThreat,
+          creating: existing.creating || false
+        })
+      } else {
+        // 保持现有对象引用，避免重渲染
+        mergedThreats.push(existing)
+      }
+    } else {
+      // 新威胁
+      mergedThreats.push({
+        ...newThreat,
+        creating: false
+      })
+    }
+  }
+
+  return mergedThreats
+}
+
 const refreshThreats = async () => {
   try {
     const result = await systemAPI.getDetectionLogs()
     if (result.success) {
-      // Show all detection records including normal traffic
-      threats.value = result.data
-        .map(threat => ({
-          ...threat,
-          creating: false
-        }))
-      
+      const newThreats = result.data || []
+
+      // 使用智能合并而不是直接替换
+      threats.value = mergeThreats(threats.value, newThreats)
+
       // Update statistics
       updateThreatStats()
     }
@@ -516,6 +596,8 @@ onUnmounted(() => {
 
 .threats-list {
   overflow-x: auto;
+  overflow-y: visible !important;
+  position: relative;
 }
 
 .threats-table table {
@@ -607,6 +689,7 @@ onUnmounted(() => {
   position: relative;
   display: inline-block;
   margin-left: 0.5rem;
+  z-index: 1001; /* Ensure tooltip appears above table */
 }
 
 .confidence-info-btn {

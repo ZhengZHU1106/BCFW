@@ -2,9 +2,20 @@
   <div class="security-flow">
     <div class="page-header">
       <h2>Security Response Flow</h2>
-      <button @click="simulateFullFlow" class="btn btn-primary" :disabled="isSimulating">
-        {{ isSimulating ? 'Running Real Demo...' : '🚀 Run Security Flow Demo' }}
-      </button>
+      <div class="control-buttons">
+        <button @click="simulateFullFlow" class="btn btn-primary" :disabled="isSimulating">
+          {{ isSimulating ? 'Running Real Demo...' : '🚀 Run Security Flow Demo' }}
+        </button>
+        <button @click="previousStep" class="btn btn-secondary" :disabled="isSimulating || currentStage <= 0">
+          ⬅️ Previous
+        </button>
+        <button @click="nextStep" class="btn btn-secondary" :disabled="isSimulating || currentStage >= flowStages.length - 1">
+          Next ➡️
+        </button>
+        <button @click="resetFlow" class="btn btn-outline" :disabled="isSimulating">
+          🔄 Reset
+        </button>
+      </div>
     </div>
 
     <!-- Flow Timeline -->
@@ -17,8 +28,10 @@
           :class="{ 
             'stage-active': currentStage === index,
             'stage-completed': index < currentStage,
-            'stage-pending': index > currentStage
+            'stage-pending': index > currentStage,
+            'stage-clickable': !isSimulating
           }"
+          @click="goToStage(index)"
         >
           <div class="stage-icon">
             <div class="icon-wrapper">
@@ -479,6 +492,128 @@ const simulateFullFlow = async () => {
   }
 }
 
+// Interactive step control functions
+const goToStage = (stageIndex) => {
+  if (isSimulating.value) return
+  if (stageIndex < 0 || stageIndex >= flowStages.value.length) return
+  
+  currentStage.value = stageIndex
+  updateStageInfo(stageIndex)
+}
+
+const nextStep = () => {
+  if (currentStage.value < flowStages.value.length - 1) {
+    goToStage(currentStage.value + 1)
+  }
+}
+
+const previousStep = () => {
+  if (currentStage.value > 0) {
+    goToStage(currentStage.value - 1)
+  }
+}
+
+const resetFlow = () => {
+  if (isSimulating.value) return
+  
+  currentStage.value = 0
+  activityStatus.value = 'idle'
+  activityStatusText.value = 'System Ready'
+  currentActivity.value = null
+  votingProgress.value = 0
+  signaturesCollected.value = 0
+}
+
+const updateStageInfo = (stageIndex) => {
+  const stage = flowStages.value[stageIndex]
+  if (!stage) return
+  
+  activityStatus.value = 'active'
+  
+  switch (stage.id) {
+    case 'detection':
+      activityStatusText.value = 'Monitoring Network Traffic'
+      currentActivity.value = {
+        icon: stage.icon,
+        title: stage.title,
+        description: 'AI system continuously monitors network traffic for suspicious patterns and anomalies.',
+        metadata: {
+          'Status': 'Active Monitoring',
+          'Sources': 'Network Traffic, System Logs',
+          'AI Model': 'HierarchicalTransformerIDS',
+          'Coverage': '24/7 Real-time'
+        }
+      }
+      break
+      
+    case 'analysis':
+      activityStatusText.value = 'AI Threat Analysis'
+      currentActivity.value = {
+        icon: stage.icon,
+        title: stage.title,
+        description: 'Advanced neural network analyzes detected patterns and assigns confidence scores.',
+        metadata: {
+          'Algorithm': 'HierarchicalTransformer',
+          'Features': '77 Network Attributes',
+          'Accuracy': '99.30% Binary, 98.90% Multi-class',
+          'Response Time': '< 100ms'
+        }
+      }
+      break
+      
+    case 'voting':
+      activityStatusText.value = 'Manager Collaboration'
+      currentActivity.value = {
+        icon: stage.icon,
+        title: stage.title,
+        description: 'Security managers review AI analysis and collaborate on response decisions.',
+        metadata: {
+          'Required Signatures': '2/3 Managers',
+          'Voting Method': 'Multi-signature Smart Contract',
+          'Rejection Power': '1-vote veto system',
+          'Transparency': 'Full blockchain audit trail'
+        }
+      }
+      votingProgress.value = Math.min(stageIndex * 20, 100)
+      signaturesCollected.value = Math.min(Math.floor(stageIndex / 2), 3)
+      break
+      
+    case 'execution':
+      activityStatusText.value = 'Response Execution'
+      currentActivity.value = {
+        icon: stage.icon,
+        title: stage.title,
+        description: 'Approved security measures are automatically executed across the network.',
+        metadata: {
+          'Execution Type': 'Automated Response',
+          'Target Actions': 'Block IP, Update Rules',
+          'Response Time': '< 5 seconds',
+          'Rollback': 'Available if needed'
+        }
+      }
+      break
+      
+    case 'audit':
+      activityStatusText.value = 'Blockchain Recording'
+      currentActivity.value = {
+        icon: stage.icon,
+        title: stage.title,
+        description: 'All security actions are permanently recorded on blockchain for complete transparency.',
+        metadata: {
+          'Blockchain': 'Ganache Local Network',
+          'Smart Contract': 'MultiSigProposal.sol',
+          'Immutability': 'Tamper-proof records',
+          'Accessibility': 'Public verification'
+        }
+      }
+      break
+      
+    default:
+      activityStatusText.value = 'System Ready'
+      currentActivity.value = null
+  }
+}
+
 // Auto-refresh timer
 let refreshTimer = null
 
@@ -523,6 +658,12 @@ onUnmounted(() => {
   font-size: 2rem;
 }
 
+.control-buttons {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
 .btn {
   padding: 0.75rem 1.5rem;
   border: none;
@@ -544,6 +685,29 @@ onUnmounted(() => {
 .btn-primary:hover:not(:disabled) {
   transform: translateY(-2px);
   box-shadow: 0 6px 20px rgba(0, 123, 255, 0.4);
+}
+
+.btn-secondary {
+  background: linear-gradient(135deg, #6c757d, #495057);
+  color: white;
+  box-shadow: 0 4px 12px rgba(108, 117, 125, 0.3);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(108, 117, 125, 0.4);
+}
+
+.btn-outline {
+  background: transparent;
+  color: #6c757d;
+  border: 2px solid #6c757d;
+}
+
+.btn-outline:hover:not(:disabled) {
+  background: #6c757d;
+  color: white;
+  transform: translateY(-2px);
 }
 
 .btn:disabled {
@@ -573,6 +737,19 @@ onUnmounted(() => {
   text-align: center;
   position: relative;
   transition: all 0.5s ease;
+}
+
+.timeline-stage.stage-clickable {
+  cursor: pointer;
+}
+
+.timeline-stage.stage-clickable:hover .icon-wrapper {
+  transform: scale(1.1);
+  box-shadow: 0 4px 15px rgba(0, 123, 255, 0.3);
+}
+
+.timeline-stage.stage-clickable:hover .stage-content h4 {
+  color: #007bff;
 }
 
 .stage-icon {
