@@ -10,6 +10,19 @@
 
 **摘要**: 本文旨在全面回顾和梳理人工智能（AI）在增强区块链系统安全性方面的研究与实践。我们系统地分类了现有的AI应用场景，包括链上交易监控、智能合约漏洞审计、以及节点级的入侵检测。此外，本文还深入探讨了当前方法所面临的核心挑战，如对抗性攻击、数据稀缺性等，并对未来的研究方向，如自动化安全审计与去中心化AI响应机制，进行了展望。
 
+**1.0. 文献库构建策略 (Literature Collection Strategy)**
+
+为确保Survey的全面性和前沿性，我们采用“种子筛选”与“引文网络扩展”相结合的策略。
+
+1.  **精准筛选种子文献 (Seed Selection via Elicit)**: 使用Elicit等AI研究工具，通过一系列精心设计的、从宏观到具体的问题，筛选出约25-30篇高度相关的“种子文献”。
+
+2.  **双向扩展引文网络 (Citation Network Expansion via SciSpace)**:
+    *   将种子文献导入SciSpace，并从中挑选5-10篇“超级种子”（如高被引、顶级期刊论文）。
+    *   **向后追溯 (Backward)**: 分析超级种子论文的参考文献，找到领域内更早期的基础性、开创性工作。
+    *   **向前追溯 (Forward)**: 分析引用了超级种子论文的后续研究，找到最新的改进、扩展和跟进工作。
+
+3.  **筛选与扩充 (Filter and Expand)**: 在浏览引文网络时，通过快速阅读标题和摘要来判断相关性，优先选择高质量来源的论文，并注意避免主题漂移。通过此方法，将文献库从约30篇扩充至80篇左右的核心文献集合。
+
 **大纲**:
 
 1.  **引言 (Introduction)**
@@ -114,23 +127,97 @@
 
 以下是一份初步的、真实的参考文献列表，可以作为您研究的起点。建议重点关注其中的综述类文章和近两年的论文。
 
-1.  **[SURVEY]** Y. Li, R. H. Guting, and R. K. L. Ko, **"A Survey on Security of Blockchain-based Smart Contracts: Attacks, Defenses, and Challenges,"** *ACM Computing Surveys*, 2023.
+1.  **[SURVEY]** Y. Li, R. H. Guting, and R. K. L. Ko, **'''A Survey on Security of Blockchain-based Smart Contracts: Attacks, Defenses, and Challenges,'''** *ACM Computing Surveys*, 2023.
     *(一篇关于智能合约安全的优秀综述)*
 
-2.  **[SURVEY]** M. A. Ferrag et al., **"Revolutionizing cyber threat detection with artificial intelligence in the blockchain era,"** *Journal of Parallel and Distributed Computing*, 2023.
+2.  **[SURVEY]** M. A. Ferrag et al., **'''Revolutionizing cyber threat detection with artificial intelligence in the blockchain era,'''** *Journal of Parallel and Distributed Computing*, 2023.
     *(一篇关于AI在网络威胁检测应用的综述)*
 
-3.  **[SMART CONTRACT]** S. Wang, D. Ye, X. Li, et al., **"GPT-based static analysis for smart contract vulnerability detection,"** *arXiv preprint arXiv:2404.07473*, 2024.
+3.  **[SMART CONTRACT]** S. Wang, D. Ye, X. Li, et al., **'''GPT-based static analysis for smart contract vulnerability detection,'''** *arXiv preprint arXiv:2404.07473*, 2024.
     *(一篇关于使用大语言模型检测智能合约漏洞的最新论文)*
 
-4.  **[SMART CONTRACT]** Z. Wu, Z. Li, Z. Chen, et al., **"A Survey on Machine Learning for Ethereum Smart Contracts: Formal-Method-Style, Code-Based, and Graph-Based,"** *arXiv preprint arXiv:2401.03499*, 2024.
+4.  **[SMART CONTRACT]** Z. Wu, Z. Li, Z. Chen, et al., **'''A Survey on Machine Learning for Ethereum Smart Contracts: Formal-Method-Style, Code-Based, and Graph-Based,'''** *arXiv preprint arXiv:2401.03499*, 2024.
     *(关于机器学习在智能合约分析中的方法分类综述)*
 
-5.  **[INTRUSION DETECTION]** Q. A. Al-Haija, A. Al-Badawi, and G. Al-Batat, **"A Hierarchical Hybrid Deep Learning-Based Intrusion Detection System for IoT Networks,"** *IEEE Internet of Things Journal*, 2023.
+5.  **[INTRUSION DETECTION]** Q. A. Al-Haija, A. Al-Badawi, and G. Al-Batat, **'''A Hierarchical Hybrid Deep Learning-Based Intrusion Detection System for IoT Networks,'''** *IEEE Internet of Things Journal*, 2023.
     *(虽然针对IoT，但其分层混合深度学习的思路与本项目有相似之处，可作参考)*
 
-6.  **[TRANSACTION ANALYSIS]** W. Z. Tang, Y. C. Hu, and C. M. Chen, **"A Survey on Machine Learning-Based Anomaly Detection for Blockchain Transactions,"** *IEEE Access*, 2022.
+6.  **[TRANSACTION ANALYSIS]** W. Z. Tang, Y. C. Hu, and C. M. Chen, **'''A Survey on Machine Learning-Based Anomaly Detection for Blockchain Transactions,'''** *IEEE Access*, 2022.
     *(关于链上交易异常检测的综述)*
 
-7.  **[DATASET]** I. Sharafaldin, A. H. Lashkari, and A. A. Ghorbani, **"Toward Generating a New Intrusion Detection Dataset and Intrusion Traffic Characterization,"** *Proceedings of the 4th International Conference on Information Systems Security and Privacy (ICISSP)*, 2018.
+7.  **[DATASET]** I. Sharafaldin, A. H. Lashkari, and A. A. Ghorbani, **'''Toward Generating a New Intrusion Detection Dataset and Intrusion Traffic Characterization,'''** *Proceedings of the 4th International Conference on Information Systems Security and Privacy (ICISSP)*, 2018.
     *(本项目使用的CIC-IDS2017数据集的原始论文，引用时必须包含)*
+
+---
+
+## 第四部分：SurveyX 指令版本 (SurveyX Prompt Versions)
+
+根据AI工具的输入限制，提供以下两个版本的“超级指令”。
+
+### 版本一：“顶配中文版” (推荐，约2900字符内)
+
+这个版本在保留完整指导性的前提下，为每一个子要点都增加了具体的阐述要求和写作侧重点，是与AI协作的最佳选择。
+
+```
+你是一位顶尖的学术研究专家。你的核心任务是严格且完全地基于所提供的约80篇论文，撰写一篇高质量、全面、且具有深度分析的学术综述论文。
+
+论文标题：
+"A Survey of AI Applications for Security in Blockchain-enabled IoT Networks: Taxonomies, Challenges, and Future Directions"
+
+研究焦点：
+深入探讨人工智能（AI）、区块链安全与物联网（IoT）这三个领域的交叉地带，并特别聚焦于在资源受限的IoT环境下的实际应用与挑战。
+
+大纲：
+请严格遵循以下极其详细的结构和内容要求进行撰写：
+
+1.  **引言 (Introduction)**
+    1.1. 物联网、区块链与AI的融合趋势 (阐述三者结合的技术必然性、协同效应与广阔的应用前景)。
+    1.2. 该融合生态中出现的安全挑战 (点出由于IoT设备资源受限、网络异构和区块链去中心化特性带来的新问题)。
+    1.3. 本综述的范围、贡献与结构 (明确本文的边界，突出本文提出的分类体系和前瞻性分析作为核心贡献)。
+
+2.  **背景技术与威胁模型 (Background Technologies and Threat Models)**
+    2.1. 区块链赋能的物联网系统核心概念 (简要介绍基础架构，为后文的轻量化改造做铺垫)。
+    2.2. 相关AI/ML技术简介 (重点介绍无监督学习、深度学习、联邦学习等与安全检测任务强相关的技术)。
+    2.3. 常见威胁模型与攻击向量 (不仅要罗列，还要简要解释每种攻击的原理，如DDoS, 女巫攻击, 数据投毒等)。
+
+3.  **AI安全应用的分类体系 (A Taxonomy of AI Applications for Security)**
+    3.1. 系统与网络层安全 (这是本综述的重点之一，需详细介绍AI如何用于节点级的入侵检测和恶意流量识别)。
+    3.2. 智能合约与应用层安全 (阐述如何利用NLP、GNN等技术进行自动化代码审计和漏洞挖掘)。
+    3.3. 链上数据与交易安全 (分析如何利用机器学习进行欺诈交易、洗钱等异常模式的检测)。
+
+4.  **关键赋能技术与专门架构 (Key Enablers and Specialized Architectures)**
+    4.1. 面向物联网的轻量级区块链设计与共识机制 (分析为何标准区块链不适用，以及轻量化方案如何解决计算和存储瓶颈)。
+    4.2. 用于去中心化数据的联邦学习及其他隐私保护机器学习方法 (强调其在保护IoT用户数据隐私方面的关键作用)。
+
+5.  **性能、权衡与核心挑战 (Performance, Trade-offs, and Core Challenges)**
+    5.1. 关键性能指标分析 (系统性梳理文献中用于评估方案优劣的指标，如准确率、精确率、召回率、F1分数等)。
+    5.2. 关键权衡的讨论 (这是展现综述深度的关键，需深入探讨在资源受限的IoT设备上，高准确率、低延迟和低开销之间不可兼得的矛盾关系)。
+    5.3. 领域面临的核心挑战 (对对抗性攻击、高质量数据稀缺、模型可解释性差、可扩展性不足等问题进行归纳和分析)。
+
+6.  **未来研究方向 (Future Research Directions)**
+    6.1. 智能与自动化的安全响应系统 (探讨从“检测”到“响应”的闭环，以及AI在其中扮演的角色)。
+    6.2. 大语言模型(LLM)在区块链安全中的角色 (分析LLM在代码生成、安全审计、自然语言接口等方面的潜在应用)。
+    6.3. 完全去中心化的自治安全框架的机遇 (展望结合DAO和AI，实现社区驱动、自适应进化的安全新范式)。
+
+7.  **结论 (Conclusion)**
+    7.1. 总结本文的核心贡献，再次强调AI在解决区块链-IoT安全问题上的巨大潜力，并重申主要的挑战和最有前景的研究方向。
+
+---
+**核心创作准则 (Core Creation Principles):**
+
+- **写作方法:** 你的价值在于“综合”与“分析”，而不是“翻译”或“复制”。你需要像一位真正的学者一样，提炼出不同论文间的共识、矛盾和演进脉络。禁止简单罗列各篇论文的摘要。
+- **核心主题:** 在写作过程中，必须时刻围绕并深入分析以下主题：
+  - **轻量级区块链架构**：为何它是IoT场景的必需品？有哪些实现路径？
+  - **AI驱动的入侵检测**：针对DDoS、攻击等具体威胁，主流的AI模型和方法是什么？
+  - **联邦学习**：它如何具体地解决去中心化IoT网络中的数据孤岛和隐私问题？
+  - **性能权衡**：在比较不同方案时，必须从准确率、计算/通信开销、隐私保护水平等多个维度进行批判性评估。
+- **格式:** 最终产出必须是格式规范、语言流畅的**学术英语**。
+```
+
+### 版本二：“500字符极限版” (兼容所有工具)
+
+这个版本为有严格字数限制的工具设计，指令非常精简。
+
+```
+Write a survey using only the provided papers on AI for security in blockchain-enabled IoT networks. Structure it logically with an introduction, analysis of methods, discussion of challenges, and future directions. Critically synthesize and compare findings; do not summarize. Focus on lightweight architectures, federated learning, and performance trade-offs (accuracy vs. overhead). Formal academic English.
+```

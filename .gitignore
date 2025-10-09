@@ -8,15 +8,17 @@ __pycache__/
 security_platform.db
 
 # Data and Models
-backend/assets/data/
-backend/assets/model_package/
-inference_data.pt
-feature_selector.pkl
-label_encoder.pkl
-model_info.json
-model.pth
-scaler.pkl
-selected_features.json
+# Note: Model files are now included for complete deployment
+# Small model files are included, large datasets excluded (distribute via other means)
+backend/assets/data/inference_data_7class.pt
+# backend/assets/model_package/
+# inference_data.pt
+# feature_selector.pkl
+# label_encoder.pkl
+# model_info.json
+# model.pth
+# scaler.pkl
+# selected_features.json
 
 # Node.js
 frontend/node_modules/
