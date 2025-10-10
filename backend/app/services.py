@@ -197,14 +197,63 @@ def _add_compatibility_methods(model):
             'response_level': response_level
         }
     
+    def simulate_medium_threat_detection():
+        """模拟中等威胁检测 - 专门生成需要提案的威胁 (置信度 0.70-0.90)"""
+        if not hasattr(model, 'inference_data') or model.inference_data is None:
+            return _generate_medium_random_prediction()
+
+        # 尝试找到置信度在0.70-0.90之间的真实威胁样本
+        max_attempts = 50
+        for attempt in range(max_attempts):
+            # 随机选择一个样本
+            sample_idx = np.random.randint(0, len(model.inference_data))
+            sample_tensor = model.inference_data[sample_idx:sample_idx+1]
+
+            # 转换为 DataFrame
+            sample_df = pd.DataFrame(sample_tensor.numpy(), columns=model.feature_names)
+
+            # 预测
+            results = model.predict(sample_df)
+            result = results[0]
+
+            # 获取真实标签
+            true_label = "Unknown"
+            if hasattr(model, 'inference_labels') and model.inference_labels is not None:
+                true_label_idx = int(model.inference_labels[sample_idx])
+                if true_label_idx < len(model.inference_class_names):
+                    true_label = model.inference_class_names[true_label_idx]
+
+            predicted_class = result['multi_prediction'] if result['multi_prediction'] else result['binary_prediction']
+            confidence = result['confidence']
+
+            # 检查是否符合中等威胁条件
+            if predicted_class != 'Benign' and 0.70 <= confidence <= 0.90:
+                # 找到合适的样本！
+                if confidence >= THREAT_THRESHOLDS["medium_high"]:
+                    response_level = "auto_create_proposal"
+                else:
+                    response_level = "manual_decision_alert"
+
+                return {
+                    'sample_index': sample_idx,
+                    'predicted_class': predicted_class,
+                    'confidence': confidence,
+                    'true_label': true_label,
+                    'response_level': response_level
+                }
+
+        # 如果50次尝试都没找到，手动生成一个中等置信度威胁
+        logger.warning(f"未能从数据集中找到中等置信度威胁，生成模拟威胁")
+        return _generate_medium_random_prediction()
+
     def get_model_info():
         """获取模型信息 - 兼容旧接口"""
         model_info = model.model_info.copy()
-        
+
         inference_samples = 0
         if hasattr(model, 'inference_data') and model.inference_data is not None:
             inference_samples = len(model.inference_data)
-        
+
         model_info.update({
             'inference_samples': inference_samples,
             'classes': ['Benign'] + model.multi_classes,
@@ -212,14 +261,14 @@ def _add_compatibility_methods(model):
             'architecture': 'HierarchicalPredictor',
             'device': str(model.device)
         })
-        
+
         return model_info
-    
+
     def _generate_random_prediction():
         classes = ['Benign', 'Bot', 'Brute_Force', 'DDoS', 'DoS', 'PortScan', 'Web_Attack']
         predicted_class = np.random.choice(classes)
         confidence = np.random.uniform(0.5, 0.95)
-        
+
         # ... (response_level logic) ...
 
         return {
@@ -228,9 +277,31 @@ def _add_compatibility_methods(model):
             'true_label': 'Unknown',
             'response_level': 'log_only'
         }
-    
+
+    def _generate_medium_random_prediction():
+        """生成中等置信度的随机威胁（用于演示）"""
+        # 只选择真实威胁类型，不包括Benign
+        threat_classes = ['Bot', 'Brute_Force', 'DDoS', 'DoS', 'PortScan', 'Web_Attack']
+        predicted_class = np.random.choice(threat_classes)
+        # 生成0.70-0.90之间的置信度
+        confidence = np.random.uniform(0.70, 0.90)
+
+        # 确定响应级别
+        if confidence >= THREAT_THRESHOLDS["medium_high"]:  # 0.80
+            response_level = "auto_create_proposal"
+        else:
+            response_level = "manual_decision_alert"
+
+        return {
+            'predicted_class': predicted_class,
+            'confidence': confidence,
+            'true_label': predicted_class,  # 假设预测正确
+            'response_level': response_level
+        }
+
     # 将方法绑定到模型实例
     model.simulate_attack_detection = simulate_attack_detection
+    model.simulate_medium_threat_detection = simulate_medium_threat_detection
     model.get_model_info = get_model_info
 
 class ThreatDetectionService:
@@ -295,11 +366,66 @@ class ThreatDetectionService:
             db.rollback()
             raise
     
-    def _handle_detection_response(self, db: Session, detection_result: Dict, 
+    def simulate_medium_threat(self, db: Session) -> Dict:
+        """模拟中等威胁 - 专门生成需要提案的威胁（演示用）"""
+        try:
+            detection_result = self.threat_model.simulate_medium_threat_detection()
+
+            source_ip = self._generate_random_ip()
+            target_ip = self._generate_random_ip()
+
+            detection_log = ThreatDetectionLog(
+                threat_type=detection_result['predicted_class'],
+                confidence=detection_result['confidence'],
+                true_label=detection_result['true_label'],
+                response_level=detection_result['response_level'],
+                source_ip=source_ip,
+                target_ip=target_ip,
+                detection_data=detection_result
+            )
+
+            response_action = self._handle_detection_response(
+                db, detection_result, detection_log, target_ip
+            )
+
+            detection_log.action_taken = response_action['action_taken']
+            detection_log.proposal_id = response_action.get('proposal_id')
+            detection_log.execution_log_id = response_action.get('execution_log_id')
+
+            db.add(detection_log)
+            db.commit()
+
+            result = {
+                "detection_id": detection_log.id,
+                "threat_info": {
+                    "predicted_class": detection_result['predicted_class'],
+                    "confidence": detection_result['confidence'],
+                    "true_label": detection_result['true_label'],
+                    "response_level": detection_result['response_level']
+                },
+                "network_info": {
+                    "source_ip": source_ip,
+                    "target_ip": target_ip
+                },
+                "response_action": response_action,
+                "timestamp": detection_log.detected_at.isoformat()
+            }
+
+            logger.info(f"🎯 中等威胁模拟完成: {detection_result['predicted_class']} "
+                       f"(置信度: {detection_result['confidence']:.4f}, 响应: {detection_result['response_level']})")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"❌ 中等威胁模拟失败: {e}", exc_info=True)
+            db.rollback()
+            raise
+
+    def _handle_detection_response(self, db: Session, detection_result: Dict,
                                  detection_log: ThreatDetectionLog, target_ip: str) -> Dict:
         # ... (rest of the class is unchanged) ...
         response_level = detection_result['response_level']
-        
+
         if response_level == "automatic_response":
             execution_log = self._execute_automatic_response(db, detection_result, target_ip)
             return {"action_taken": "automatic_block", "execution_log_id": execution_log.id, "description": "高置信度威胁，自动执行封锁"}
@@ -563,46 +689,9 @@ class ProposalService:
         except Exception as e:
             db.rollback()
             return {"success": False, "error": str(e)}
-    
-    def _update_manager_contribution(self, signer_role: str) -> None:
-        """更新管理员贡献记录"""
-        import json
-        import os
-        from datetime import datetime
-        
-        from ..config import ASSETS_DIR
-        contributions_file = ASSETS_DIR / "manager_contributions_state.json"
-        
-        try:
-            # 读取现有贡献数据
-            if os.path.exists(contributions_file):
-                with open(contributions_file, 'r') as f:
-                    contributions = json.load(f)
-            else:
-                contributions = {}
-            
-            # 初始化或更新指定管理员的数据
-            if signer_role not in contributions:
-                contributions[signer_role] = {
-                    "signature_count": 0,
-                    "quality_score": 85,
-                    "total_rewards": 0,
-                    "last_activity": "2024-01-01T00:00:00Z"
-                }
-            
-            # 增加签名计数
-            contributions[signer_role]["signature_count"] += 1
-            contributions[signer_role]["last_activity"] = datetime.utcnow().isoformat() + "Z"
-            
-            # 保存更新后的数据
-            os.makedirs(os.path.dirname(contributions_file), exist_ok=True)
-            with open(contributions_file, 'w') as f:
-                json.dump(contributions, f, indent=2)
-                
-            logger.info(f"Updated contribution for {signer_role}, new count: {contributions[signer_role]['signature_count']}")
-            
-        except Exception as e:
-            logger.warning(f"Failed to update manager contribution: {e}")
+
+    # Note: _update_manager_contribution() method removed
+    # Contributions are now automatically tracked in the smart contract when managers sign proposals
 
 class SystemInfoService:
     def __init__(self):
@@ -650,52 +739,34 @@ class SystemInfoService:
             }
 class RewardPoolService:
     def __init__(self):
-        from ..config import ASSETS_DIR
         self.web3_manager = get_web3_manager()
-        self.pool_state_file = str(ASSETS_DIR / "reward_pool_state.json")
-        self.contributions_file = str(ASSETS_DIR / "manager_contributions_state.json")
-    
+
     def get_reward_pool_info(self) -> Dict:
-        """获取奖金池信息"""
+        """获取奖金池信息 - 从智能合约读取（区块链是唯一数据源）"""
         try:
-            # 尝试从状态文件读取真实数据
-            import json
-            import os
-            
-            if os.path.exists(self.pool_state_file):
-                with open(self.pool_state_file, 'r') as f:
-                    pool_state = json.load(f)
+            # 直接从智能合约获取奖金池信息
+            result = self.web3_manager.get_reward_pool_info()
+
+            if result.get('success'):
+                pool_info = result['pool_info']
                 return {
-                    "success": True, 
+                    "success": True,
                     "pool_info": {
-                        "balance": pool_state.get("balance", 85.1),
+                        "balance": pool_info['balance'],
                         "status": "Active",
-                        "total_distributed": pool_state.get("total_distributed", 0),
-                        "distribution_count": pool_state.get("distribution_count", 0)
+                        "base_reward": pool_info.get('base_reward', 0.01),
+                        "total_distributed": 0,  # TODO: 添加到智能合约追踪
+                        "distribution_count": 0   # TODO: 添加到智能合约追踪
                     }
                 }
             else:
-                # 如果文件不存在，初始化默认状态
-                default_state = {
-                    "balance": 100.0,
-                    "total_distributed": 0,
-                    "distribution_count": 0,
-                    "last_updated": "2024-01-01T00:00:00Z"
-                }
-                os.makedirs(os.path.dirname(self.pool_state_file), exist_ok=True)
-                with open(self.pool_state_file, 'w') as f:
-                    json.dump(default_state, f, indent=2)
-                
                 return {
-                    "success": True, 
-                    "pool_info": {
-                        "balance": 100.0,
-                        "status": "Active",
-                        "total_distributed": 0,
-                        "distribution_count": 0
-                    }
+                    "success": False,
+                    "error": result.get('error', 'Failed to get reward pool info from smart contract'),
+                    "pool_info": {}
                 }
         except Exception as e:
+            logger.error(f"Failed to get reward pool info: {e}")
             return {
                 "success": False,
                 "error": f"Failed to get reward pool info: {str(e)}",
@@ -703,43 +774,23 @@ class RewardPoolService:
             }
     
     def get_manager_contributions(self) -> Dict:
-        """获取Manager贡献记录"""
+        """获取Manager贡献记录 - 从智能合约读取（区块链是唯一数据源）"""
         try:
-            import json
-            import os
-            
-            if os.path.exists(self.contributions_file):
-                with open(self.contributions_file, 'r') as f:
-                    contributions = json.load(f)
-            else:
-                # 初始化默认贡献记录
-                contributions = {
-                    "manager_0": {
-                        "signature_count": 0,
-                        "quality_score": 85,
-                        "total_rewards": 0,
-                        "last_activity": "2024-01-01T00:00:00Z"
-                    },
-                    "manager_1": {
-                        "signature_count": 0,
-                        "quality_score": 82,
-                        "total_rewards": 0,
-                        "last_activity": "2024-01-01T00:00:00Z"
-                    },
-                    "manager_2": {
-                        "signature_count": 0,
-                        "quality_score": 78,
-                        "total_rewards": 0,
-                        "last_activity": "2024-01-01T00:00:00Z"
-                    }
+            # 直接从智能合约获取所有Manager的贡献记录
+            result = self.web3_manager.get_all_manager_contributions()
+
+            if not result.get('success'):
+                return {
+                    "success": False,
+                    "error": result.get('error', 'Failed to get contributions from smart contract'),
+                    "contributions": {}
                 }
-                os.makedirs(os.path.dirname(self.contributions_file), exist_ok=True)
-                with open(self.contributions_file, 'w') as f:
-                    json.dump(contributions, f, indent=2)
-            
+
+            blockchain_contributions = result['contributions']
+
             # 转换数据格式以匹配前端期望
             formatted_contributions = {}
-            for manager, data in contributions.items():
+            for manager_role, data in blockchain_contributions.items():
                 # 计算 performance_grade 基于 quality_score
                 score = data.get('quality_score', 0)
                 if score >= 90:
@@ -750,20 +801,21 @@ class RewardPoolService:
                     grade = "Good"
                 else:
                     grade = "Needs Improvement"
-                
-                formatted_contributions[manager] = {
-                    "total_signatures": data.get("signature_count", 0),  # 前端期望的字段名
-                    "quality_score": data.get("quality_score", 0),
-                    "performance_grade": grade,  # 新增字段
-                    "total_rewards": data.get("total_rewards", 0),
-                    "last_activity": data.get("last_activity", "2024-01-01T00:00:00Z")
+
+                formatted_contributions[manager_role] = {
+                    "total_signatures": data.get("total_signatures", 0),  # 从智能合约读取
+                    "quality_score": data.get("quality_score", 0),  # 从智能合约读取
+                    "performance_grade": grade,
+                    "total_rewards": 0,  # TODO: 添加到智能合约追踪
+                    "last_activity": data.get("last_signature_time") or "2024-01-01T00:00:00Z"  # 从智能合约读取
                 }
-            
+
             return {
                 "success": True,
                 "contributions": formatted_contributions
             }
         except Exception as e:
+            logger.error(f"Failed to get manager contributions: {e}")
             return {
                 "success": False,
                 "error": f"Failed to get manager contributions: {str(e)}",
@@ -771,19 +823,15 @@ class RewardPoolService:
             }
     
     def deposit_to_reward_pool(self, from_role: str, amount: float) -> Dict:
-        """向奖金池充值"""
+        """向奖金池充值 - 直接操作智能合约（区块链是唯一数据源）"""
         try:
-            import json
-            import os
-            from datetime import datetime
-            
             # 验证金额
             if amount <= 0:
                 return {
                     "success": False,
                     "error": "Deposit amount must be greater than 0"
                 }
-            
+
             # 验证账户余额
             account_info = self.web3_manager.get_account_info(from_role)
             if not account_info or account_info['balance_eth'] < amount:
@@ -791,30 +839,21 @@ class RewardPoolService:
                     "success": False,
                     "error": f"Insufficient balance in {from_role} account"
                 }
-            
-            # 执行转账到奖励池
+
+            # 执行转账到奖励池（直接在智能合约中更新余额）
             result = self.web3_manager.deposit_to_reward_pool(from_role, amount)
-            
+
             if result.get('success'):
-                # 更新奖金池状态文件
-                pool_state = {"balance": 100.0, "total_distributed": 0, "distribution_count": 0}
-                if os.path.exists(self.pool_state_file):
-                    with open(self.pool_state_file, 'r') as f:
-                        pool_state = json.load(f)
-                
-                pool_state['balance'] = pool_state.get('balance', 0) + amount
-                pool_state['last_updated'] = datetime.utcnow().isoformat() + 'Z'
-                
-                os.makedirs(os.path.dirname(self.pool_state_file), exist_ok=True)
-                with open(self.pool_state_file, 'w') as f:
-                    json.dump(pool_state, f, indent=2)
-                
+                # 从智能合约读取最新余额
+                pool_info_result = self.web3_manager.get_reward_pool_info()
+                new_balance = pool_info_result['pool_info']['balance'] if pool_info_result.get('success') else amount
+
                 return {
                     "success": True,
                     "message": f"Successfully deposited {amount} ETH to reward pool",
                     "depositor_role": from_role,
                     "amount": amount,
-                    "new_balance": pool_state['balance'],
+                    "new_balance": new_balance,  # 从智能合约读取
                     "tx_hash": result.get('tx_hash')
                 }
             else:
@@ -823,6 +862,7 @@ class RewardPoolService:
                     "error": result.get('error', 'Failed to execute deposit transaction')
                 }
         except Exception as e:
+            logger.error(f"Deposit failed: {e}")
             return {
                 "success": False,
                 "error": f"Deposit failed: {str(e)}"
@@ -835,49 +875,7 @@ class RewardPoolService:
             return {"success": True, "message": "Auto distribution completed"}
         except Exception as e:
             return {"success": False, "error": f"Auto distribution failed: {str(e)}"}
-    
-    def update_manager_contribution(self, manager_role: str, action_type: str = "signature") -> Dict:
-        """更新Manager贡献记录"""
-        try:
-            import json
-            import os
-            from datetime import datetime
-            
-            contributions = self.get_manager_contributions()
-            if not contributions['success']:
-                return contributions
-            
-            manager_data = contributions['contributions']
-            
-            if manager_role not in manager_data:
-                manager_data[manager_role] = {
-                    "signature_count": 0,
-                    "quality_score": 80,
-                    "total_rewards": 0,
-                    "last_activity": datetime.utcnow().isoformat() + 'Z'
-                }
-            
-            # 更新签名计数
-            if action_type == "signature":
-                manager_data[manager_role]["signature_count"] += 1
-                manager_data[manager_role]["last_activity"] = datetime.utcnow().isoformat() + 'Z'
-                
-                # 简单的质量分数更新逻辑
-                current_score = manager_data[manager_role]["quality_score"]
-                manager_data[manager_role]["quality_score"] = min(100, current_score + 1)
-            
-            # 保存更新的贡献记录
-            os.makedirs(os.path.dirname(self.contributions_file), exist_ok=True)
-            with open(self.contributions_file, 'w') as f:
-                json.dump(manager_data, f, indent=2)
-            
-            return {
-                "success": True,
-                "message": f"Updated contributions for {manager_role}",
-                "updated_data": manager_data[manager_role]
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Failed to update contributions: {str(e)}"
-            }
+
+    # Note: update_manager_contribution() method removed
+    # Contributions are now automatically tracked in the smart contract when managers sign proposals
+    # Use get_manager_contributions() to retrieve current contribution data from blockchain

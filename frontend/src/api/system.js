@@ -11,6 +11,11 @@ export const systemAPI = {
     return apiClient.post('/attack/simulate')
   },
 
+  // 模拟中等威胁（演示用）
+  simulateMediumThreat() {
+    return apiClient.post('/attack/simulate-medium')
+  },
+
   // 获取提案列表
   getProposals() {
     return apiClient.get('/proposals')

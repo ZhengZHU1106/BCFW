@@ -2,9 +2,14 @@
   <div class="threats-page">
     <div class="page-header">
       <h2>Threat Detection</h2>
-      <button @click="simulateAttack" class="btn btn-danger" :disabled="isSimulating">
-        {{ isSimulating ? 'Simulating...' : 'Simulate Attack' }}
-      </button>
+      <div class="header-buttons">
+        <button @click="simulateAttack" class="btn btn-danger" :disabled="isSimulating">
+          {{ isSimulating ? 'Simulating...' : 'Simulate Attack' }}
+        </button>
+        <button @click="simulateMediumThreat" class="btn btn-warning" :disabled="isSimulatingMedium">
+          {{ isSimulatingMedium ? 'Simulating...' : 'Simulate Medium Threat' }}
+        </button>
+      </div>
     </div>
 
     <!-- Demo Mode Banner -->
@@ -159,6 +164,7 @@ import ThreatDetailsModal from '@/components/ThreatDetailsModal.vue'
 const threats = ref([])
 const latestThreat = ref(null)
 const isSimulating = ref(false)
+const isSimulatingMedium = ref(false)
 const isDemoMode = ref(false)
 
 // Threat statistics
@@ -226,14 +232,14 @@ let refreshTimer = null
 // Simulate attack
 const simulateAttack = async () => {
   if (isSimulating.value) return
-  
+
   isSimulating.value = true
   try {
     const result = await systemAPI.simulateAttack()
-    
+
     // Extract data from nested structure
     const data = result.data || result
-    
+
     // Update latest threat - 使用predicted_class保持与数据库一致
     latestThreat.value = {
       id: data.detection_id || Date.now(),
@@ -247,15 +253,59 @@ const simulateAttack = async () => {
       detected_at: data.timestamp || new Date().toISOString(),
       creating: false
     }
-    
+
     // Refresh threat list
     await refreshThreats()
-    
+
   } catch (error) {
     console.error('Attack simulation failed:', error)
     alert('Attack simulation failed. Please check backend service.')
   } finally {
     isSimulating.value = false
+  }
+}
+
+// Simulate medium threat (for demo purposes)
+const simulateMediumThreat = async () => {
+  if (isSimulatingMedium.value) return
+
+  isSimulatingMedium.value = true
+  try {
+    const result = await systemAPI.simulateMediumThreat()
+
+    // Extract data from nested structure
+    const data = result.data || result
+
+    // Update latest threat
+    latestThreat.value = {
+      id: data.detection_id || Date.now(),
+      threat_type: data.threat_info?.predicted_class || 'Unknown',
+      true_label: data.threat_info?.true_label || 'Unknown',
+      predicted_class: data.threat_info?.predicted_class || 'Unknown',
+      source_ip: data.network_info?.source_ip || '192.168.1.100',
+      confidence: data.threat_info?.confidence || 0,
+      response_level: data.threat_info?.response_level || 'manual_decision_alert',
+      status: data.response_action?.action_taken === 'auto_proposal_created' ? 'proposal_created' : 'detected',
+      detected_at: data.timestamp || new Date().toISOString(),
+      creating: false
+    }
+
+    // Refresh threat list
+    await refreshThreats()
+
+    // Show success message
+    const responseLevel = data.threat_info?.response_level
+    if (responseLevel === 'auto_create_proposal') {
+      alert('✅ Medium threat detected! Proposal automatically created.')
+    } else if (responseLevel === 'manual_decision_alert') {
+      alert('⚠️ Medium-low threat detected! Manual decision required.')
+    }
+
+  } catch (error) {
+    console.error('Medium threat simulation failed:', error)
+    alert('Medium threat simulation failed. Please check backend service.')
+  } finally {
+    isSimulatingMedium.value = false
   }
 }
 
@@ -530,6 +580,22 @@ onUnmounted(() => {
 .page-header h2 {
   margin: 0;
   color: #2c3e50;
+}
+
+.header-buttons {
+  display: flex;
+  gap: 1rem;
+}
+
+.btn-warning {
+  background-color: #f39c12;
+  border: 1px solid #f39c12;
+  color: white;
+}
+
+.btn-warning:hover:not(:disabled) {
+  background-color: #e67e22;
+  border-color: #e67e22;
 }
 
 .latest-threat {

@@ -1,11 +1,17 @@
 TODO 行动文档
 
-### **第一阶段：环境与核心配置** ✅ **已完成**
+> **📌 文档版本说明**:
+> - **Phase 1-16 (历史版本)**: 使用Ganache模拟器和HD钱包助记词
+> - **Phase 17 (当前版本)**: 迁移到DevLeChain真实私有链和Keystore账户管理
+> - 本文档保留历史开发过程以追溯项目演进
 
-* [x] 全局安装 `ganache`: `npm install -g ganache`。
-* [x] 确定一个12词的**项目助记词**，并写入`README.md`。
+### **第一阶段：环境与核心配置** ✅ **已完成 (Ganache时代 - Phase 1-16)**
+
+* [x] 全局安装 `ganache`: `npm install -g ganache`。(Phase 17已废弃 - 现使用DevLeChain)
+* [x] 确定一个12词的**项目助记词**，并写入`README.md`。(Phase 17已废弃 - 现使用Keystore)
   * **实现说明**: 生成了有效的BIP39助记词：`bulk tonight audit hover toddler orange boost twenty biology flower govern soldier`
   * **原因**: 原助记词不符合BIP39标准，重新生成了有效助记词
+  * **当前状态**: Phase 17迁移到Keystore文件管理账户
 * [x] 在`package.json`中或创建一个`start-chain.sh`脚本，配置好启动Ganache的最终命令:
   * **实现说明**: 创建了多种启动方式
     - `npm run start-chain` - CLI方式启动
@@ -27,12 +33,14 @@ TODO 行动文档
 * [x] 优化项目文档结构
 * [x] 创建开发环境自动化脚本
 
-### **第二阶段：后端开发** ✅ **已完成**
+### **第二阶段：后端开发** ✅ **已完成 (Ganache时代 - Phase 1-16)**
 
 * [x] 配置FastAPI，使其`Web3`实例连接到本地Ganache (`http://127.0.0.1:8545`)。
   * **实现说明**: 完整的Web3Manager集成，支持确定性账户生成和余额管理
+  * **当前状态**: Phase 17迁移到DevLeChain RPC端点
 * [x] 从Ganache启动日志中复制**固定的**Manager和金库账户的地址与私钥，作为后端的配置项。
   * **实现说明**: 使用BIP39助记词生成确定性账户，无需复制地址
+  * **当前状态**: Phase 17从Keystore文件加载预定义账户
 * [x] **核心**: 创建AI模型集成，编写逻辑在应用启动时**加载预打包的模型文件**。
   * **实现说明**: 完整的assets/model_package/predictor.py，支持真实HierarchicalTransformerIDS模型加载
   * **改进**: 解决了sklearn版本兼容性问题，使用joblib替代pickle
@@ -80,11 +88,12 @@ TODO 行动文档
 * [x] CSV数据导出功能
 * [x] 完善的错误处理和用户体验
 
-### **第四阶段：集成测试与交付** ✅ **已完成**
+### **第四阶段：集成测试与交付** ✅ **已完成 (Ganache时代 - Phase 1-16)**
 
 * [x] 进行端到端手动测试，确保所有业务逻辑正确。
   * **实现说明**: test_phase2_fixed.sh测试脚本验证所有功能正常
 * [x] 编写`README.md`，清晰说明如何安装依赖、如何启动Ganache、后端和前端，以及如何进行演示。
+  * **当前状态**: Phase 17更新为DevLeChain启动说明 (./system.sh start)
   * **实现说明**: 完整的README文档，包含Phase 3启动指南
 * [x] 清理代码，准备最终交付。
   * **实现说明**: 创建start-phase3.sh一键启动脚本，完善项目文档
@@ -108,13 +117,13 @@ TODO 行动文档
 * [x] 文档更新
   * **实现说明**: 更新CLAUDE.md记录当前状态和下一步计划
 
-### **第六阶段：自定义MultiSig智能合约集成** ✅ **已完成**
+### **第六阶段：自定义MultiSig智能合约集成** ✅ **已完成 (Phase 1-16 Ganache, Phase 17 DevLeChain)**
 
 * [x] **智能合约开发**
   * **实现说明**: 创建 `MultiSigProposal.sol` 智能合约，支持2/3多重签名
 * [x] **合约部署和配置**
-  * **实现说明**: 使用 `deploy_multisig_simple.js` 部署合约到Ganache
-  * **合约地址**: `0x5FbDB2315678afecb367f032d93F642f64180aa3`
+  * **Ganache版本 (Phase 1-16)**: 部署到Ganache，合约地址 `0x5FbDB2315678afecb367f032d93F642f64180aa3`
+  * **DevLeChain版本 (Phase 17)**: 重新部署到DevLeChain，合约地址 `0x7A267CfB376816e398750dc80462a6d996EfD992`
 * [x] **Python集成模块**
   * **实现说明**: 创建 `multisig_contract.py` 实现后端与合约交互
 * [x] **提案创建升级**

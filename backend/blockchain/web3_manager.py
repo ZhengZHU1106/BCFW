@@ -233,9 +233,9 @@ class Web3Manager:
             # 导入多签名合约集成模块
             from .multisig_contract import MultiSigContract
             self.multisig_contract = MultiSigContract(self)
-            
-            # 加载合约配置
-            config_path = os.path.join(os.path.dirname(__file__), '../assets/multisig_contract.json')
+
+            # 加载合约配置（注意：MultiSigContract已经在内部加载了deployed_contract.json）
+            config_path = os.path.join(os.path.dirname(__file__), '../assets/deployed_contract.json')
             if os.path.exists(config_path):
                 with open(config_path, 'r') as f:
                     self.multisig_config = json.load(f)
@@ -243,7 +243,7 @@ class Web3Manager:
             else:
                 logger.warning(f"⚠️ MultiSig合约配置文件不存在: {config_path}")
                 self.multisig_config = None
-                
+
         except Exception as e:
             logger.error(f"❌ MultiSig合约初始化失败: {e}")
             self.multisig_contract = None

@@ -133,6 +133,20 @@ async def simulate_attack(db: Session = Depends(get_db)):
         logger.error(f"攻击模拟失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/attack/simulate-medium")
+async def simulate_medium_threat(db: Session = Depends(get_db)):
+    """模拟中等威胁 - 专门生成需要提案的威胁（演示用）"""
+    try:
+        result = threat_service.simulate_medium_threat(db)
+        return {
+            "success": True,
+            "data": result,
+            "message": "中等威胁模拟执行成功 - 已生成需要提案的威胁"
+        }
+    except Exception as e:
+        logger.error(f"中等威胁模拟失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/system/status")
 async def get_system_status(db: Session = Depends(get_db)):
     """获取系统状态"""

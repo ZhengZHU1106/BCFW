@@ -1,7 +1,9 @@
 ### 项目总结文稿：区块链智能安防平台 (BCFW)
 
+> **📌 文档说明**: 本文档描述的是当前生产版本 **Phase 17 (DevLeChain)** 架构。历史版本 (Phase 1-16, Ganache时代) 的相关内容已明确标注为"历史功能"或"已废弃"。
+
 #### 1. 项目愿景与核心理念
-BCFW (Blockchain Firewall) 是一个集成了人工智能（AI）与区块链技术的创新安防演示平台。其核心理念是：利用AI的高效性自动检测网络威胁，同时利用区块链的去中心化、透明和不可篡改特性，对高风险安全响应进行民主化、可审计的决策。项目旨在解决传统安全系统“中心化决策”和“操作不透明”的痛点。
+BCFW (Blockchain Firewall) 是一个集成了人工智能（AI）与区块链技术的创新安防演示平台。其核心理念是：利用AI的高效性自动检测网络威胁，同时利用区块链的去中心化、透明和不可篡改特性，对高风险安全响应进行民主化、可审计的决策。项目旨在解决传统安全系统"中心化决策"和"操作不透明"的痛点。
 
 #### 2. 系统架构
 系统由四个核心部分组成：
@@ -10,9 +12,9 @@ BCFW (Blockchain Firewall) 是一个集成了人工智能（AI）与区块链技
 *   **AI模型 (AI Model)**: 一个预训练的 **PyTorch** 模型 (`HierarchicalTransformerIDS`)，用于分类网络流量，识别DDoS、端口扫描等多种攻击。
 *   **区块链 (Blockchain)**: 使用 **DevLeChain** (Geth 1.10.22) 真实的以太坊私有链，运行一个自定义的 **Solidity** 智能合约 (`MultiSigProposal.sol`)，负责处理提案的投票和执行。
 
-**技术演进 (Phase 17完成):**
-*   **Phase 1-16**: 使用Ganache模拟器，HD钱包助记词管理账户
-*   **Phase 17**: 完成向DevLeChain真实私有链的迁移，Keystore文件管理账户，实现区块链优先架构
+**技术演进历史:**
+*   **Phase 1-16 (已废弃 - Ganache时代)**: 使用Ganache本地模拟器，HD钱包助记词管理账户，数据库优先架构
+*   **Phase 17 (当前版本 - DevLeChain时代)**: 使用DevLeChain真实私有链，Keystore文件管理账户，实现区块链优先架构
 
 #### 3. 完整功能拆解
 
@@ -126,13 +128,13 @@ BCFW (Blockchain Firewall) 是一个集成了人工智能（AI）与区块链技
 - ✅ Phase A: 完整奖励池机制，基于贡献度的公平分配算法
 - ✅ **Phase 17: DevLeChain区块链迁移** - 从Ganache模拟器完全迁移到真实私有链
 
-**Phase 17核心变更:**
-- ✅ **区块链平台**: Ganache → DevLeChain (Geth 1.10.22, PoW ethash)
-- ✅ **账户管理**: HD钱包助记词 → Keystore文件解密加载
+**Phase 17核心架构变更 (当前生产版本):**
+- ✅ **区块链平台**: Ganache本地模拟器 → DevLeChain真实私有链 (Geth 1.10.22, PoW ethash)
+- ✅ **账户管理**: HD钱包助记词派生 → Keystore文件解密加载
 - ✅ **数据架构**: 数据库优先 → 智能合约优先（数据库作为只读缓存）
-- ✅ **合约部署**: 0x5FbDB...0aa3 (Ganache) → 0x7A267...D992 (DevLeChain)
+- ✅ **合约部署**: 0x5FbDB...0aa3 (Ganache历史地址) → 0x7A267...D992 (DevLeChain当前地址)
 - ✅ **业务逻辑**: 完全重构sign_proposal、create_proposal为区块链优先
-- ✅ **API调整**: 废弃动态节点创建API (DevLeChain使用预定义账户)
+- ✅ **API调整**: 废弃动态节点创建API (DevLeChain使用预定义Keystore账户)
 
 **⚠️ 功能变化说明:**
 - ❌ **动态节点创建已废弃**: DevLeChain使用预定义Keystore账户，不支持运行时创建节点
