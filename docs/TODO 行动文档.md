@@ -567,3 +567,83 @@ TODO 行动文档
 - [ ] 实现提案撤回功能和相关界面
 - [ ] 实现实时的提案状态更新和通知
 - [ ] 优化账户选择器和角色提示界面
+
+### **第十七阶段：DevLeChain区块链迁移** ✅ **已完成 (5-7天)**
+
+**从Ganache模拟器到真实私有链的完整迁移:**
+- [x] **DevLeChain配置**: 配置真实以太坊私有链环境，替换Ganache模拟器 ✅
+- [x] **Keystore账户管理**: 从Keystore文件加载账户，替换HD钱包助记词方式 ✅
+- [x] **智能合约部署**: 将MultiSigProposal.sol部署到DevLeChain真实区块链 ✅
+- [x] **业务逻辑重构**: 实现区块链优先架构，数据库仅作为只读缓存 ✅
+- [x] **API兼容性调整**: 废弃动态节点创建，适配DevLeChain预定义账户模式 ✅
+- [x] **端到端测试**: 通过Playwright验证完整提案创建→签名→执行流程 ✅
+- [x] **代码清理**: 删除测试脚本，保持系统简洁 ✅
+
+**Phase 17.1: DevLeChain环境配置** ✅
+- [x] 配置DevLeChain RPC端点: http://127.0.0.1:8545
+- [x] 设置Chain ID 20000和Network ID 20000
+- [x] 配置Keystore目录: /home/devlechain/ChainData/20000_20000_ethash_0/keystore
+- [x] 定义6个固定账户角色 (manager_0/1/2, treasury, operator_0/1)
+- [x] 更新config.py的DEVLECHAIN_CONFIG配置
+
+**Phase 17.2: 账户管理系统重构** ✅
+- [x] 重写Web3Manager._load_accounts()从Keystore加载
+- [x] 实现eth_account.Account.decrypt()解密Keystore文件
+- [x] 移除Ganache助记词和HD钱包依赖
+- [x] 存储私钥用于DevLeChain交易签名
+- [x] 实现账户余额查询和管理
+
+**Phase 17.3: 智能合约部署到DevLeChain** ✅
+- [x] 使用Hardhat部署MultiSigProposal.sol到DevLeChain
+- [x] 合约地址: 0x7A267CfB376816e398750dc80462a6d996EfD992
+- [x] 初始化Manager角色 (manager_0, manager_1, manager_2)
+- [x] 初始化Operator角色 (operator_0, operator_1)
+- [x] 从Treasury账户向合约转账10 ETH用于奖励分配
+
+**Phase 17.4: 核心业务逻辑区块链优先重构** ✅
+- [x] **sign_proposal()重构**: 先调用智能合约签名，再同步状态到数据库缓存
+- [x] **_create_auto_proposal()重构**: 先在区块链创建提案，再创建数据库记录
+- [x] **create_manual_proposal()新增**: 支持手动创建区块链提案的完整流程
+- [x] **数据库角色转变**: 从数据源变为只读缓存，智能合约是唯一真相来源
+- [x] **状态同步机制**: 从区块链读取最新状态并更新数据库缓存
+
+**Phase 17.5: API层兼容性调整** ✅
+- [x] 废弃/api/network/nodes/create端点（返回501错误）
+- [x] 添加错误提示说明DevLeChain使用预定义Keystore账户
+- [x] 保持其他API端点向后兼容
+- [x] 更新API文档说明新的账户管理模式
+
+**Phase 17.6: 完整工作流测试** ✅
+- [x] 创建测试提案: DB-ID-1, Contract-ID-5
+- [x] Playwright自动化测试验证
+- [x] Manager 0签名验证 (1/2签名)
+- [x] Manager 1签名验证 (2/2签名，触发自动执行)
+- [x] 验证提案状态从Pending变为Approved
+- [x] 验证奖励自动分配到Manager账户
+
+**Phase 17.7: 代码清理和优化** ✅
+- [x] 删除test_create_proposal.py测试脚本
+- [x] 删除sync_proposal_to_db.py同步脚本
+- [x] 删除fund_contract.py充值脚本
+- [x] 保持代码库简洁，仅使用正常API流程
+
+**关键技术变化总结:**
+- **区块链平台**: Ganache模拟器 → DevLeChain真实私有链 (Geth 1.10.22)
+- **账户管理**: HD钱包助记词 → Keystore文件解密
+- **数据架构**: 数据库优先 → 智能合约优先，数据库作为只读缓存
+- **合约地址**: 0x5FbDB2315678afecb367f032d93F642f64180aa3 (Ganache) → 0x7A267CfB376816e398750dc80462a6d996EfD992 (DevLeChain)
+- **网络参数**: Chain ID 1337 (Ganache) → Chain ID 20000 (DevLeChain)
+
+**解决的核心问题:**
+- ✅ 核心业务逻辑不再依赖数据库模拟
+- ✅ 提案签名和执行真正在区块链上完成
+- ✅ 智能合约成为唯一权威数据源
+- ✅ 系统从"模拟区块链"升级为"真实区块链"
+- ✅ 为生产环境部署奠定基础
+
+**测试验证结果:**
+- ✅ 提案创建成功记录到区块链
+- ✅ Manager签名成功触发智能合约
+- ✅ 2/2签名阈值自动执行提案
+- ✅ 奖励分配正常工作
+- ✅ 数据库缓存正确同步区块链状态

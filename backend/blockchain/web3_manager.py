@@ -41,35 +41,93 @@ class Web3Manager:
             raise
     
     def _setup_accounts(self):
-        """设置确定性账户"""
+        """从DevLeChain keystore加载账户"""
         try:
-            # 启用HD钱包功能
-            Account.enable_unaudited_hdwallet_features()
-            
-            mnemonic = GANACHE_CONFIG['mnemonic']
-            account_mapping = GANACHE_CONFIG['accounts']
-            
-            # 为每个角色生成确定性账户
-            for role, index in account_mapping.items():
-                account = Account.from_mnemonic(
-                    mnemonic, 
-                    account_path=f"m/44'/60'/0'/0/{index}"
-                )
-                
-                self.accounts[role] = account.address
-                self.private_keys[role] = account.key.hex()
-                
-                # 验证余额
-                balance = self.w3.eth.get_balance(account.address)
-                balance_eth = self.w3.from_wei(balance, 'ether')
-                
-                logger.info(f"👛 {role}: {account.address} (余额: {balance_eth} ETH)")
-            
+            keystore_dir = GANACHE_CONFIG.get('keystore_dir')
+            password = GANACHE_CONFIG.get('password')
+            accounts_config = GANACHE_CONFIG['accounts']
+
+            # 检查是否是新的DevLeChain配置(地址而非索引)
+            first_account_value = list(accounts_config.values())[0]
+            is_address_config = isinstance(first_account_value, str) and first_account_value.startswith('0x')
+
+            if is_address_config and keystore_dir and password:
+                # DevLeChain模式：从keystore加载
+                logger.info("🔑 从DevLeChain keystore加载账户...")
+                self._load_from_keystore(keystore_dir, password, accounts_config)
+            else:
+                # Ganache模式：使用助记词(向后兼容)
+                logger.info("🔑 使用助记词派生账户(Ganache模式)...")
+                self._load_from_mnemonic()
+
             logger.info("✅ 账户设置完成")
-            
+
         except Exception as e:
             logger.error(f"❌ 账户设置失败: {e}")
             raise
+
+    def _load_from_keystore(self, keystore_dir: str, password: str, accounts_config: Dict):
+        """从keystore文件加载账户"""
+        import os
+        import glob
+
+        for role, address in accounts_config.items():
+            try:
+                # 查找对应的keystore文件(不区分大小写)
+                pattern = os.path.join(keystore_dir, f"*--{address[2:].lower()}")
+                keyfiles = glob.glob(pattern)
+
+                if not keyfiles:
+                    logger.warning(f"⚠️  未找到{role}的keystore文件: {address}")
+                    continue
+
+                keyfile_path = keyfiles[0]
+
+                # 读取并解密keystore
+                with open(keyfile_path, 'r') as f:
+                    encrypted_key = json.load(f)
+
+                private_key = Account.decrypt(encrypted_key, password)
+                account = Account.from_key(private_key)
+
+                # 验证地址匹配
+                if account.address.lower() != address.lower():
+                    logger.error(f"❌ 地址不匹配: {role} - 期望{address}, 实际{account.address}")
+                    continue
+
+                self.accounts[role] = account.address
+                self.private_keys[role] = private_key.hex()
+
+                # 验证余额
+                balance = self.w3.eth.get_balance(account.address)
+                balance_eth = self.w3.from_wei(balance, 'ether')
+
+                logger.info(f"👛 {role}: {account.address} (余额: {balance_eth} ETH)")
+
+            except Exception as e:
+                logger.error(f"❌ 加载{role}账户失败: {e}")
+                raise
+
+    def _load_from_mnemonic(self):
+        """使用助记词派生账户(Ganache模式-向后兼容)"""
+        Account.enable_unaudited_hdwallet_features()
+
+        mnemonic = GANACHE_CONFIG.get('mnemonic', '')
+        account_mapping = GANACHE_CONFIG['accounts']
+
+        for role, index in account_mapping.items():
+            account = Account.from_mnemonic(
+                mnemonic,
+                account_path=f"m/44'/60'/0'/0/{index}"
+            )
+
+            self.accounts[role] = account.address
+            self.private_keys[role] = account.key.hex()
+
+            balance = self.w3.eth.get_balance(account.address)
+            balance_eth = self.w3.from_wei(balance, 'ether')
+
+            logger.info(f"👛 {role}: {account.address} (余额: {balance_eth} ETH)")
     
     def get_account_info(self, role: str) -> Dict:
         """获取账户信息"""

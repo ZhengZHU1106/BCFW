@@ -1,623 +1,525 @@
 """
-MultiSig Contract Integration Module - Python Version
-Integrates custom multi-signature contract with existing Web3Manager
+MultiSig Contract Integration Module - Real Web3.py Implementation
+Integrates with deployed MultiSigProposal contract on DevLeChain
 """
 
 import json
 import os
 from datetime import datetime
-from typing import Dict, Any, Set
+from typing import Dict, Any, Optional
 import logging
+from web3.exceptions import ContractLogicError
 
 logger = logging.getLogger(__name__)
 
 class MultiSigContract:
-    """多签名合约集成类"""
-    
+    """Real smart contract integration class"""
+
     def __init__(self, web3_manager, reward_pool_service=None):
         self.web3_manager = web3_manager
-        self.reward_pool_service = reward_pool_service  # 注入RewardPoolService依赖
-        self.proposals = {}  # In-memory proposal storage for demo
-        self.proposal_counter = 1
-        
-        # Load contract configuration
-        self.config = self._load_config()
-        
-        # 如果有RewardPoolService，使用它来管理状态；否则使用内部状态
-        if self.reward_pool_service:
-            # 使用RewardPoolService管理状态，不再自己维护
-            self.reward_pool_balance = 0.0  # 从service获取
-            self.contributions = {}  # 从service获取
-        else:
-            # 降级到内部管理（向后兼容）
-            self.reward_pool_balance = 0.0  # ETH
-            self.contributions = {}  # manager_address -> contribution_data
-            
-            # Initialize reward pool balance from persistent storage or Treasury tracking
-            self._initialize_reward_pool_balance()
-            
-            # Initialize contributions from persistent storage
-            self._initialize_contributions()
-        
-    def _load_config(self) -> Dict[str, Any]:
-        """加载合约配置"""
+        self.reward_pool_service = reward_pool_service
+        self.w3 = web3_manager.w3
+
+        # Load deployed contract
+        contract_info = self._load_deployed_contract()
+        self.contract_address = contract_info["address"]
+        self.contract_abi = contract_info["abi"]
+
+        # Create contract instance
+        self.contract = self.w3.eth.contract(
+            address=self.contract_address,
+            abi=self.contract_abi
+        )
+
+        logger.info(f"✅ MultiSig contract loaded: {self.contract_address}")
+
+    def _load_deployed_contract(self) -> Dict[str, Any]:
+        """Load deployed contract info from JSON"""
         try:
-            config_path = os.path.join(os.path.dirname(__file__), '../assets/multisig_contract.json')
-            with open(config_path, 'r') as f:
-                config = json.load(f)
-            logger.info(f"✅ MultiSig合约配置加载成功: {config['address']}")
-            return config
+            contract_path = os.path.join(
+                os.path.dirname(__file__),
+                '../assets/deployed_contract.json'
+            )
+            with open(contract_path, 'r') as f:
+                contract_info = json.load(f)
+
+            logger.info(f"✅ Deployed contract info loaded")
+            return contract_info
+
         except Exception as e:
-            logger.error(f"❌ MultiSig合约配置加载失败: {e}")
-            # 默认配置
-            return {
-                "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-                "owners": [
-                    "0x90F8bf6A479f320ead074411a4B0e7944Ea8c9C1",  # manager_0
-                    "0xFFcf8FDEE72ac11b5c542428B35EEF5769C409f0",  # manager_1
-                    "0x22d491Bde2303f2f43325b2108D26f1eAbA1e32b"   # manager_2
-                ],
-                "threshold": 2,
-                "deployer": "0xE11BA2b4D45Eaed5996Cd0823791E0C93114882d",
-                "chainId": 1337
-            }
-    
+            logger.error(f"❌ Failed to load deployed contract: {e}")
+            raise
+
     def create_proposal(self, target: str, amount: float, data: str = "0x", creator_role: str = None) -> Dict[str, Any]:
-        """创建多签名提案 - 现在检查角色权限"""
+        """Create proposal on smart contract"""
         try:
-            # 检查创建者角色权限
-            if creator_role:
-                if not self.is_authorized_creator(creator_role):
-                    raise ValueError(f"Role {creator_role} is not authorized to create proposals")
-            
-            proposal_id = self.proposal_counter
-            self.proposal_counter += 1
-            
-            amount_wei = self.web3_manager.w3.to_wei(amount, 'ether')
-            
-            proposal = {
-                "id": proposal_id,
-                "target": target,
-                "amount": amount,
-                "amount_wei": amount_wei,
-                "data": data,
-                "executed": False,
-                "signature_count": 0,
-                "signatures": set(),
-                "creator": self.web3_manager.accounts.get(creator_role or 'treasury', 'unknown'),
-                "creator_role": creator_role,
-                "created_at": datetime.now().isoformat(),
-                "contract_address": self.config["address"]
-            }
-            
-            self.proposals[proposal_id] = proposal
-            
-            logger.info(f"📝 MultiSig提案创建: ID-{proposal_id}, Target-{target}, Amount-{amount} ETH, Creator-{creator_role}")
-            
-            return {
-                "success": True,
-                "proposal_id": proposal_id,
-                "target": target,
-                "amount": amount,
-                "amount_wei": amount_wei,
-                "contract_address": self.config["address"],
-                "required_signatures": self.config["threshold"],
-                "creator_role": creator_role,
-                "message": f"Proposal {proposal_id} created successfully"
-            }
-            
+            # Check creator authorization
+            if creator_role and not self.is_authorized_creator(creator_role):
+                raise ValueError(f"Role {creator_role} is not authorized to create proposals")
+
+            # Convert amount to wei
+            amount_wei = self.w3.to_wei(amount, 'ether')
+
+            # Get creator account
+            creator_address = self.web3_manager.accounts.get(creator_role or 'operator_0')
+            creator_key = self.web3_manager.private_keys.get(creator_role or 'operator_0')
+
+            # Build transaction
+            nonce = self.w3.eth.get_transaction_count(creator_address)
+            gas_price = self.w3.eth.gas_price
+
+            txn = self.contract.functions.createProposal(
+                target,
+                amount_wei,
+                bytes.fromhex(data[2:]) if data.startswith('0x') else b''
+            ).build_transaction({
+                'from': creator_address,
+                'nonce': nonce,
+                'gas': 500000,
+                'gasPrice': gas_price,
+                'chainId': self.w3.eth.chain_id
+            })
+
+            # Sign and send
+            signed_txn = self.w3.eth.account.sign_transaction(txn, creator_key)
+            tx_hash = self.w3.eth.send_raw_transaction(signed_txn.raw_transaction)
+
+            # Wait for receipt
+            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+
+            if receipt.status == 1:
+                # Parse proposal ID from events
+                proposal_id = self._get_proposal_id_from_receipt(receipt)
+
+                logger.info(f"📝 Proposal created on-chain: ID-{proposal_id}, TX-{tx_hash.hex()}")
+
+                return {
+                    "success": True,
+                    "proposal_id": proposal_id,
+                    "target": target,
+                    "amount": amount,
+                    "amount_wei": amount_wei,
+                    "contract_address": self.contract_address,
+                    "tx_hash": tx_hash.hex(),
+                    "block_number": receipt.blockNumber,
+                    "creator_role": creator_role,
+                    "message": f"Proposal {proposal_id} created on blockchain"
+                }
+            else:
+                raise Exception(f"Transaction failed with status {receipt.status}")
+
         except Exception as e:
-            logger.error(f"❌ MultiSig提案创建失败: {e}")
+            logger.error(f"❌ Create proposal failed: {e}")
             return {
                 "success": False,
                 "error": str(e)
             }
-    
 
     def sign_proposal(self, proposal_id: int, signer_role: str) -> Dict[str, Any]:
-        """签名多签名提案 - 现在检查管理员角色权限"""
+        """Sign proposal on smart contract"""
         try:
-            # 检查签名者角色权限
+            # Check signer authorization
             if not self.is_authorized_signer(signer_role):
                 raise ValueError(f"Role {signer_role} is not authorized to sign proposals")
-            
-            proposal = self.proposals.get(proposal_id)
-            if not proposal:
-                raise ValueError(f"Proposal {proposal_id} not found")
-            
-            if proposal["executed"]:
-                raise ValueError(f"Proposal {proposal_id} already executed")
-            
+
+            # Get signer account
             signer_address = self.web3_manager.accounts.get(signer_role)
-            if not signer_address:
-                raise ValueError(f"Unknown signer role: {signer_role}")
-            
-            if signer_address not in self.config["owners"]:
-                raise ValueError(f"{signer_role} is not an authorized signer")
-            
-            if signer_role in proposal["signatures"]:
-                raise ValueError(f"{signer_role} has already signed this proposal")
-            
-            # 添加签名
-            proposal["signatures"].add(signer_role)
-            proposal["signature_count"] += 1
-            
-            # 更新贡献记录
-            self._update_contribution(signer_role, proposal["created_at"])
-            
-            logger.info(f"✅ Proposal {proposal_id} signed by {signer_role} ({proposal['signature_count']}/{self.config['threshold']})")
-            
-            result = {
-                "success": True,
+            signer_key = self.web3_manager.private_keys.get(signer_role)
+
+            # Check if already signed
+            has_signed = self.contract.functions.hasSigned(proposal_id, signer_address).call()
+            if has_signed:
+                raise ValueError(f"{signer_role} has already signed proposal {proposal_id}")
+
+            # Build transaction
+            nonce = self.w3.eth.get_transaction_count(signer_address)
+            gas_price = self.w3.eth.gas_price
+
+            txn = self.contract.functions.signProposal(proposal_id).build_transaction({
+                'from': signer_address,
+                'nonce': nonce,
+                'gas': 500000,
+                'gasPrice': gas_price,
+                'chainId': self.w3.eth.chain_id
+            })
+
+            # Sign and send
+            signed_txn = self.w3.eth.account.sign_transaction(txn, signer_key)
+            tx_hash = self.w3.eth.send_raw_transaction(signed_txn.raw_transaction)
+
+            # Wait for receipt
+            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+
+            if receipt.status == 1:
+                # Get updated proposal info
+                proposal = self.get_proposal(proposal_id)
+
+                logger.info(f"✅ Proposal {proposal_id} signed by {signer_role} on-chain")
+
+                result = {
+                    "success": True,
+                    "proposal_id": proposal_id,
+                    "signer": signer_address,
+                    "signer_role": signer_role,
+                    "signature_count": proposal["signature_count"] if proposal else 0,
+                    "tx_hash": tx_hash.hex(),
+                    "block_number": receipt.blockNumber,
+                    "signed_at": datetime.now().isoformat()
+                }
+
+                # Check if executed (from events)
+                if proposal and proposal["executed"]:
+                    result["executed"] = True
+                    result["message"] = f"Proposal {proposal_id} signed and executed"
+
+                return result
+            else:
+                raise Exception(f"Transaction failed with status {receipt.status}")
+
+        except ContractLogicError as e:
+            logger.error(f"❌ Contract logic error: {e}")
+            return {
+                "success": False,
+                "error": f"Smart contract rejected: {str(e)}",
                 "proposal_id": proposal_id,
-                "signer": signer_address,
-                "signer_role": signer_role,
-                "signature_count": proposal["signature_count"],
-                "required_signatures": self.config["threshold"],
-                "signed_at": datetime.now().isoformat()
+                "signer_role": signer_role
             }
-            
-            # 检查是否达到阈值，自动执行
-            if proposal["signature_count"] >= self.config["threshold"]:
-                execution_result = self._execute_proposal(proposal_id, signer_role)
-                result["executed"] = True
-                result["execution_result"] = execution_result
-            
-            return result
-            
         except Exception as e:
-            logger.error(f"❌ MultiSig提案签名失败: {e}")
+            logger.error(f"❌ Sign proposal failed: {e}")
             return {
                 "success": False,
                 "error": str(e),
                 "proposal_id": proposal_id,
                 "signer_role": signer_role
             }
-    
-    def _execute_proposal(self, proposal_id: int, executor_role: str) -> Dict[str, Any]:
-        """执行提案（内部方法）"""
+
+    def get_proposal(self, proposal_id: int) -> Optional[Dict[str, Any]]:
+        """Get proposal from smart contract"""
         try:
-            proposal = self.proposals.get(proposal_id)
-            
-            if proposal["signature_count"] < self.config["threshold"]:
-                raise ValueError(f"Insufficient signatures: {proposal['signature_count']}/{self.config['threshold']}")
-            
-            # 使用现有的Web3Manager发送奖励
-            reward_result = self.web3_manager.send_reward(
-                'treasury', 
-                executor_role, 
-                proposal["amount"]
-            )
-            
-            if reward_result["success"]:
-                proposal["executed"] = True
-                proposal["executed_at"] = datetime.now().isoformat()
-                proposal["executor_role"] = executor_role
-                proposal["execution_tx_hash"] = reward_result["tx_hash"]
-                
-                logger.info(f"🎉 Proposal {proposal_id} executed successfully! Reward sent to {executor_role}")
-                
+            # Call getProposal function
+            result = self.contract.functions.getProposal(proposal_id).call()
+
+            # Parse result tuple: (id, target, amount, executed, signatureCount, creator, createdAt)
+            # Check if result is valid (proposal ID >= 0 is valid)
+            if result and result[1] != '0x0000000000000000000000000000000000000000':  # Check target address
                 return {
-                    "success": True,
-                    "proposal_id": proposal_id,
-                    "executor": executor_role,
-                    "target": proposal["target"],
-                    "amount": proposal["amount"],
-                    "tx_hash": reward_result["tx_hash"],
-                    "gas_used": reward_result["gas_used"],
-                    "block_number": reward_result["block_number"],
-                    "executed_at": proposal["executed_at"]
+                    "id": result[0],
+                    "target": result[1],
+                    "amount": self.w3.from_wei(result[2], 'ether'),
+                    "amount_wei": result[2],
+                    "executed": result[3],
+                    "signature_count": result[4],
+                    "creator": result[5],
+                    "created_at": datetime.fromtimestamp(result[6]).isoformat() if result[6] > 0 else None,
+                    "contract_address": self.contract_address
                 }
             else:
-                raise Exception(f"Reward transfer failed: {reward_result['error']}")
-                
-        except Exception as e:
-            logger.error(f"❌ MultiSig提案执行失败: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-                "proposal_id": proposal_id
-            }
-    
+                return None
 
-    def get_proposal(self, proposal_id: int) -> Dict[str, Any]:
-        """获取提案详情"""
-        proposal = self.proposals.get(proposal_id)
-        if not proposal:
+        except Exception as e:
+            logger.error(f"❌ Get proposal failed: {e}")
             return None
-        
-        # 将set转换为list以便JSON序列化
-        signatures_list = list(proposal["signatures"])
-        
-        return {
-            "id": proposal["id"],
-            "target": proposal["target"],
-            "amount": proposal["amount"],
-            "amount_wei": proposal["amount_wei"],
-            "executed": proposal["executed"],
-            "signature_count": proposal["signature_count"],
-            "required_signatures": self.config["threshold"],
-            "creator": proposal["creator"],
-            "created_at": proposal["created_at"],
-            "executed_at": proposal.get("executed_at"),
-            "executor_role": proposal.get("executor_role"),
-            "execution_tx_hash": proposal.get("execution_tx_hash"),
-            "contract_address": self.config["address"],
-            "signatures": signatures_list
-        }
-    
+
     def has_signed(self, proposal_id: int, signer_role: str) -> bool:
-        """检查签名者是否已签名"""
-        proposal = self.proposals.get(proposal_id)
-        return proposal and signer_role in proposal["signatures"]
-    
+        """Check if signer has signed proposal"""
+        try:
+            signer_address = self.web3_manager.accounts.get(signer_role)
+            return self.contract.functions.hasSigned(proposal_id, signer_address).call()
+        except:
+            return False
+
     def get_contract_info(self) -> Dict[str, Any]:
-        """获取合约信息"""
-        return {
-            "address": self.config["address"],
-            "owners": self.config["owners"],
-            "threshold": self.config["threshold"],
-            "owner_count": len(self.config["owners"]),
-            "chain_id": self.config["chainId"],
-            "deployed_at": self.config.get("deployedAt"),
-            "total_proposals": self.proposal_counter - 1
-        }
-    
+        """Get contract information"""
+        try:
+            owners = self.contract.functions.getOwners().call()
+            threshold = self.contract.functions.threshold().call()
+            proposal_count = self.contract.functions.proposalCount().call()
+
+            return {
+                "address": self.contract_address,
+                "owners": owners,
+                "threshold": threshold,
+                "owner_count": len(owners),
+                "chain_id": self.w3.eth.chain_id,
+                "total_proposals": proposal_count
+            }
+        except Exception as e:
+            logger.error(f"❌ Get contract info failed: {e}")
+            return {
+                "address": self.contract_address,
+                "error": str(e)
+            }
+
     def get_all_proposals(self) -> list:
-        """获取所有提案"""
-        return [self.get_proposal(proposal_id) for proposal_id in self.proposals.keys()]
-    
+        """Get all proposals from contract"""
+        try:
+            proposal_count = self.contract.functions.proposalCount().call()
+            proposals = []
+
+            # Proposal IDs start from 0
+            for i in range(0, proposal_count):
+                proposal = self.get_proposal(i)
+                if proposal:
+                    proposals.append(proposal)
+
+            return proposals
+        except Exception as e:
+            logger.error(f"❌ Get all proposals failed: {e}")
+            return []
+
     def get_pending_proposals(self) -> list:
-        """获取待处理提案"""
-        return [self.get_proposal(proposal_id) for proposal_id, proposal in self.proposals.items() 
-                if not proposal["executed"]]
-    
+        """Get pending (not executed) proposals"""
+        all_proposals = self.get_all_proposals()
+        return [p for p in all_proposals if not p.get("executed", False)]
+
     # ================================
     # Reward Pool Methods
     # ================================
-    
+
     def deposit_to_reward_pool(self, from_role: str, amount_eth: float) -> Dict[str, Any]:
-        """向奖金池充值ETH"""
+        """Deposit ETH to reward pool in smart contract"""
         try:
-            # 使用Web3Manager的send_reward功能来模拟充值
-            # 从指定角色向treasury账户转账
-            deposit_result = self.web3_manager.send_reward(from_role, 'treasury', amount_eth)
-            
-            if deposit_result["success"]:
-                # 更新奖金池余额（模拟）
-                self.reward_pool_balance += amount_eth
-                
-                # 保存状态到文件
-                self._save_reward_pool_state()
-                
-                logger.info(f"💰 Reward pool deposit: {amount_eth} ETH from {from_role}")
-                logger.info(f"📊 New pool balance: {self.reward_pool_balance} ETH")
-                
+            depositor_address = self.web3_manager.accounts.get(from_role)
+            depositor_key = self.web3_manager.private_keys.get(from_role)
+
+            amount_wei = self.w3.to_wei(amount_eth, 'ether')
+
+            # Build transaction
+            nonce = self.w3.eth.get_transaction_count(depositor_address)
+            gas_price = self.w3.eth.gas_price
+
+            txn = self.contract.functions.depositToRewardPool().build_transaction({
+                'from': depositor_address,
+                'value': amount_wei,
+                'nonce': nonce,
+                'gas': 100000,
+                'gasPrice': gas_price,
+                'chainId': self.w3.eth.chain_id
+            })
+
+            # Sign and send
+            signed_txn = self.w3.eth.account.sign_transaction(txn, depositor_key)
+            tx_hash = self.w3.eth.send_raw_transaction(signed_txn.raw_transaction)
+
+            # Wait for receipt
+            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+
+            if receipt.status == 1:
+                pool_info = self.get_reward_pool_info()
+
+                logger.info(f"💰 Deposited {amount_eth} ETH to reward pool")
+
                 return {
                     "success": True,
                     "depositor_role": from_role,
                     "amount": amount_eth,
-                    "new_balance": self.reward_pool_balance,
-                    "tx_hash": deposit_result["tx_hash"],
+                    "new_balance": pool_info.get("balance", 0),
+                    "tx_hash": tx_hash.hex(),
+                    "block_number": receipt.blockNumber,
                     "deposited_at": datetime.now().isoformat()
                 }
             else:
-                raise Exception(f"Deposit transaction failed: {deposit_result['error']}")
-                
+                raise Exception(f"Transaction failed with status {receipt.status}")
+
         except Exception as e:
-            logger.error(f"❌ Reward pool deposit failed: {e}")
+            logger.error(f"❌ Deposit to reward pool failed: {e}")
             return {
                 "success": False,
-                "error": str(e),
-                "depositor_role": from_role,
-                "amount": amount_eth
+                "error": str(e)
             }
-    
+
     def get_reward_pool_info(self) -> Dict[str, Any]:
-        """获取奖金池信息"""
+        """Get reward pool info from contract"""
         try:
-            # 获取treasury账户的实际余额作为奖金池总额
-            treasury_info = self.web3_manager.get_account_info('treasury')
-            
+            result = self.contract.functions.getRewardPoolInfo().call()
+            # Returns (balance, baseReward)
+
             return {
-                "balance": self.reward_pool_balance,
-                "balance_wei": self.web3_manager.w3.to_wei(self.reward_pool_balance, 'ether'),
-                "base_reward": 0.01,  # 基础奖励 0.01 ETH
-                "base_reward_wei": self.web3_manager.w3.to_wei(0.01, 'ether'),
-                "treasury_balance": treasury_info["balance_eth"],
-                "treasury_address": treasury_info["address"],
+                "balance": self.w3.from_wei(result[0], 'ether'),
+                "balance_wei": result[0],
+                "base_reward": self.w3.from_wei(result[1], 'ether'),
+                "base_reward_wei": result[1],
                 "last_updated": datetime.now().isoformat()
             }
-            
         except Exception as e:
-            logger.error(f"❌ Failed to get reward pool info: {e}")
+            logger.error(f"❌ Get reward pool info failed: {e}")
             return {
                 "balance": 0,
                 "balance_wei": 0,
                 "base_reward": 0.01,
-                "base_reward_wei": self.web3_manager.w3.to_wei(0.01, 'ether'),
+                "base_reward_wei": self.w3.to_wei(0.01, 'ether'),
                 "error": str(e)
             }
-    
-    def _initialize_reward_pool_balance(self):
-        """初始化奖金池余额（从数据库或状态文件恢复）"""
-        try:
-            # 简化实现：从文件恢复奖金池状态
-            state_file = os.path.join(os.path.dirname(__file__), '../assets/reward_pool_state.json')
-            if os.path.exists(state_file):
-                with open(state_file, 'r') as f:
-                    state = json.load(f)
-                    self.reward_pool_balance = state.get('balance', 0.0)
-                    logger.info(f"✅ 奖金池余额从状态文件恢复: {self.reward_pool_balance} ETH")
-            else:
-                logger.info("💰 奖金池状态文件不存在，余额设为 0.0 ETH")
-        except Exception as e:
-            logger.error(f"❌ 恢复奖金池状态失败: {e}")
-            self.reward_pool_balance = 0.0
-    
-    def _save_reward_pool_state(self):
-        """保存奖金池状态到文件"""
-        try:
-            state_file = os.path.join(os.path.dirname(__file__), '../assets/reward_pool_state.json')
-            state = {
-                'balance': self.reward_pool_balance,
-                'last_updated': datetime.now().isoformat()
-            }
-            with open(state_file, 'w') as f:
-                json.dump(state, f)
-            logger.debug(f"📝 奖金池状态已保存: {self.reward_pool_balance} ETH")
-        except Exception as e:
-            logger.error(f"❌ 保存奖金池状态失败: {e}")
-    
-    def _initialize_contributions(self):
-        """初始化Manager贡献度（从状态文件恢复）"""
-        try:
-            contrib_file = os.path.join(os.path.dirname(__file__), '../assets/contributions_state.json')
-            if os.path.exists(contrib_file):
-                with open(contrib_file, 'r') as f:
-                    self.contributions = json.load(f)
-                    logger.info(f"✅ Manager贡献度从状态文件恢复: {len(self.contributions)} 条记录")
-            else:
-                logger.info("💰 贡献度状态文件不存在，使用空记录")
-        except Exception as e:
-            logger.error(f"❌ 恢复Manager贡献度失败: {e}")
-            self.contributions = {}
-    
-    def _save_contributions_state(self):
-        """保存Manager贡献度到文件"""
-        try:
-            contrib_file = os.path.join(os.path.dirname(__file__), '../assets/contributions_state.json')
-            with open(contrib_file, 'w') as f:
-                json.dump(self.contributions, f, indent=2)
-            logger.debug(f"📝 Manager贡献度已保存: {len(self.contributions)} 条记录")
-        except Exception as e:
-            logger.error(f"❌ 保存Manager贡献度失败: {e}")
-    
+
     def get_contribution(self, manager_address: str) -> Dict[str, Any]:
-        """获取Manager贡献记录"""
-        contribution = self.contributions.get(manager_address, {
-            "total_signatures": 0,
-            "total_response_time": 0,
-            "quality_score": 0,
-            "last_signature_time": None
-        })
-        
-        # 计算平均响应时间
-        avg_response_time = 0
-        if contribution["total_signatures"] > 0:
-            avg_response_time = contribution["total_response_time"] / contribution["total_signatures"]
-        
-        return {
-            "total_signatures": contribution["total_signatures"],
-            "avg_response_time": avg_response_time,
-            "quality_score": contribution["quality_score"],
-            "last_signature_time": contribution["last_signature_time"]
-        }
-    
-    def _update_contribution(self, manager_role: str, proposal_created_at: str):
-        """更新Manager贡献记录 - 通过RewardPoolService或内部方法"""
+        """Get manager contribution from contract"""
         try:
-            if self.reward_pool_service:
-                # 使用RewardPoolService管理贡献度
-                current_time = datetime.now()
-                created_time = datetime.fromisoformat(proposal_created_at)
-                response_time_seconds = (current_time - created_time).total_seconds()
-                
-                # 委托给RewardPoolService处理
-                self.reward_pool_service.update_manager_contribution(
-                    manager_role, 
-                    signature_count=1,
-                    response_time=response_time_seconds
-                )
-                logger.info(f"✅ Contribution updated via RewardPoolService for {manager_role}")
-                return
-            
-            # 降级到内部方法（向后兼容）
-            self._update_contribution_legacy(manager_role, proposal_created_at)
-            
-        except Exception as e:
-            logger.error(f"❌ 更新贡献度失败: {e}")
-            # 尝试降级到内部方法
-            try:
-                self._update_contribution_legacy(manager_role, proposal_created_at)
-            except:
-                logger.error(f"❌ 降级到内部贡献度更新也失败")
-    
-    def _update_contribution_legacy(self, manager_role: str, proposal_created_at: str):
-        """内部贡献度更新方法（向后兼容）"""
-        try:
-            manager_address = self.web3_manager.accounts.get(manager_role)
-            if not manager_address:
-                logger.warning(f"⚠️  Manager address not found for role: {manager_role}")
-                return
-            
-            # 初始化贡献记录
-            if manager_address not in self.contributions:
-                self.contributions[manager_address] = {
-                    "total_signatures": 0,
-                    "total_response_time": 0,
-                    "quality_score": 0,
-                    "last_signature_time": None
-                }
-            
-            contribution = self.contributions[manager_address]
-            
-            # 计算响应时间
-            current_time = datetime.now()
-            created_time = datetime.fromisoformat(proposal_created_at)
-            response_time_seconds = (current_time - created_time).total_seconds()
-            
-            # 更新统计
-            contribution["total_signatures"] += 1
-            contribution["total_response_time"] += response_time_seconds
-            contribution["last_signature_time"] = current_time.isoformat()
-            
-            # 计算质量评分（0-100分标准化）
-            contribution["quality_score"] = self._calculate_quality_score(
-                response_time_seconds, 
-                contribution["last_signature_time"]
-            )
-            
-            logger.info(f"📈 Updated contribution for {manager_role}: {contribution['total_signatures']} signatures, quality: {contribution['quality_score']}")
-            
-            # 保存贡献度状态
-            self._save_contributions_state()
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to update contribution for {manager_role}: {e}")
-    
-    def _calculate_quality_score(self, response_time_seconds: float, last_signature_time: str) -> int:
-        """计算质量评分（0-100分）"""
-        # 响应速度分（60%权重）
-        if response_time_seconds <= 10:
-            speed_score = 60
-        elif response_time_seconds <= 30:
-            speed_score = 50
-        elif response_time_seconds <= 60:
-            speed_score = 40
-        elif response_time_seconds <= 120:
-            speed_score = 30
-        elif response_time_seconds <= 300:
-            speed_score = 20
-        else:
-            speed_score = 10
-        
-        # 活跃度分（40%权重）
-        try:
-            last_time = datetime.fromisoformat(last_signature_time)
-            minutes_since_last = (datetime.now() - last_time).total_seconds() / 60
-            
-            if minutes_since_last <= 10:
-                activity_score = 40
-            elif minutes_since_last <= 30:
-                activity_score = 30
-            elif minutes_since_last <= 60:
-                activity_score = 20
-            else:
-                activity_score = 10
-        except:
-            # 如果是第一次签名，给满分活跃度
-            activity_score = 40
-        
-        return int(speed_score + activity_score)  # 0-100分
-    
-    def distribute_contribution_rewards(self, admin_role: str) -> Dict[str, Any]:
-        """分配基于贡献度的奖励"""
-        try:
-            if self.reward_pool_balance <= 0.1:  # 保留一些基础奖励
-                raise ValueError("Insufficient reward pool balance")
-            
-            # 计算总贡献分数
-            total_contribution_score = 0
-            manager_scores = {}
-            
-            for manager_role in ["manager_0", "manager_1", "manager_2"]:
-                manager_address = self.web3_manager.accounts.get(manager_role)
-                if manager_address and manager_address in self.contributions:
-                    contribution = self.contributions[manager_address]
-                    # 贡献分数 = 签名次数 + 质量分数/100
-                    score = contribution["total_signatures"] + (contribution["quality_score"] / 100)
-                    manager_scores[manager_role] = score
-                    total_contribution_score += score
-            
-            if total_contribution_score == 0:
-                logger.info("📊 No contributions to reward")
-                return {"success": True, "message": "No contributions to reward"}
-            
-            # 可分配奖励（保留0.1 ETH用于基础奖励）
-            available_rewards = max(0, self.reward_pool_balance - 0.1)
-            distribution_results = []
-            
-            # 按比例分配奖励
-            for manager_role, score in manager_scores.items():
-                if score > 0:
-                    reward_amount = (available_rewards * score) / total_contribution_score
-                    
-                    if reward_amount > 0.001:  # 最小奖励阈值
-                        reward_result = self.web3_manager.send_reward('treasury', manager_role, reward_amount)
-                        
-                        if reward_result["success"]:
-                            self.reward_pool_balance -= reward_amount
-                            distribution_results.append({
-                                "manager_role": manager_role,
-                                "reward_amount": reward_amount,
-                                "contribution_score": score,
-                                "tx_hash": reward_result["tx_hash"]
-                            })
-            
-            logger.info(f"🎁 Distributed {len(distribution_results)} contribution rewards")
-            
+            result = self.contract.functions.getContribution(manager_address).call()
+            # Returns (totalSignatures, avgResponseTime, qualityScore, lastSignatureTime)
+
             return {
-                "success": True,
-                "distributions": distribution_results,
-                "total_distributed": sum(r["reward_amount"] for r in distribution_results),
-                "remaining_pool": self.reward_pool_balance,
-                "distributed_at": datetime.now().isoformat()
+                "total_signatures": result[0],
+                "avg_response_time": result[1],
+                "quality_score": result[2],
+                "last_signature_time": datetime.fromtimestamp(result[3]).isoformat() if result[3] > 0 else None
             }
-            
         except Exception as e:
-            logger.error(f"❌ Failed to distribute contribution rewards: {e}")
+            logger.error(f"❌ Get contribution failed: {e}")
+            return {
+                "total_signatures": 0,
+                "avg_response_time": 0,
+                "quality_score": 0,
+                "last_signature_time": None
+            }
+
+    def distribute_contribution_rewards(self, admin_role: str) -> Dict[str, Any]:
+        """Distribute rewards based on contributions"""
+        try:
+            admin_address = self.web3_manager.accounts.get(admin_role)
+            admin_key = self.web3_manager.private_keys.get(admin_role)
+
+            # Build transaction
+            nonce = self.w3.eth.get_transaction_count(admin_address)
+            gas_price = self.w3.eth.gas_price
+
+            txn = self.contract.functions.distributeContributionRewards().build_transaction({
+                'from': admin_address,
+                'nonce': nonce,
+                'gas': 500000,
+                'gasPrice': gas_price,
+                'chainId': self.w3.eth.chain_id
+            })
+
+            # Sign and send
+            signed_txn = self.w3.eth.account.sign_transaction(txn, admin_key)
+            tx_hash = self.w3.eth.send_raw_transaction(signed_txn.raw_transaction)
+
+            # Wait for receipt
+            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+
+            if receipt.status == 1:
+                logger.info(f"🎁 Contribution rewards distributed")
+
+                return {
+                    "success": True,
+                    "tx_hash": tx_hash.hex(),
+                    "block_number": receipt.blockNumber,
+                    "distributed_at": datetime.now().isoformat()
+                }
+            else:
+                raise Exception(f"Transaction failed with status {receipt.status}")
+
+        except Exception as e:
+            logger.error(f"❌ Distribute rewards failed: {e}")
             return {
                 "success": False,
                 "error": str(e)
             }
-    
+
     # ================================
     # Role Authorization Methods
     # ================================
-    
+
     def is_authorized_creator(self, role: str) -> bool:
-        """检查角色是否有权限创建提案 (Operator或Manager)"""
-        return role in ["operator_0", "operator_1", "operator_2", "operator_3", "operator_4", 
-                       "manager_0", "manager_1", "manager_2"]
-    
+        """Check if role can create proposals (Operator or Manager)"""
+        try:
+            address = self.web3_manager.accounts.get(role)
+            if not address:
+                return False
+
+            # Check both operator and manager roles
+            is_operator = self.contract.functions.isOperator(address).call()
+            is_manager = self.contract.functions.isManager(address).call()
+
+            return is_operator or is_manager
+        except:
+            # Fallback to local check
+            return role in ["operator_0", "operator_1", "operator_2", "operator_3", "operator_4",
+                           "manager_0", "manager_1", "manager_2"]
+
     def is_authorized_signer(self, role: str) -> bool:
-        """检查角色是否有权限签名提案 (仅Manager)"""
-        return role in ["manager_0", "manager_1", "manager_2"]
-    
+        """Check if role can sign proposals (Manager only)"""
+        try:
+            address = self.web3_manager.accounts.get(role)
+            if not address:
+                return False
+
+            return self.contract.functions.isManager(address).call()
+        except:
+            # Fallback to local check
+            return role in ["manager_0", "manager_1", "manager_2"]
+
     def get_user_role(self, user_address: str) -> str:
-        """根据地址获取用户角色"""
-        # 反向查找角色
-        for role, address in self.web3_manager.accounts.items():
-            if address.lower() == user_address.lower():
-                if role in ["manager_0", "manager_1", "manager_2"]:
-                    return "MANAGER"
-                elif role.startswith("operator_"):
-                    return "OPERATOR"
-        return "NONE"
-    
-    def get_role_info(self, role: str) -> Dict[str, Any]:
-        """获取角色信息"""
-        address = self.web3_manager.accounts.get(role)
-        if not address:
-            return {"exists": False}
-        
-        return {
-            "exists": True,
-            "address": address,
-            "role": role,
-            "can_create_proposals": self.is_authorized_creator(role),
-            "can_sign_proposals": self.is_authorized_signer(role),
-            "is_manager": self.is_authorized_signer(role),
-            "is_operator": role.startswith("operator_")
-        }
+        """Get user role from contract"""
+        try:
+            role_enum = self.contract.functions.getUserRole(user_address).call()
+            # Role enum: 0=NONE, 1=OPERATOR, 2=MANAGER
+
+            role_map = {0: "NONE", 1: "OPERATOR", 2: "MANAGER"}
+            return role_map.get(role_enum, "NONE")
+        except:
+            return "NONE"
+
+    def assign_role(self, user_address: str, role: int, admin_role: str) -> Dict[str, Any]:
+        """Assign role to user (admin only)"""
+        try:
+            admin_address = self.web3_manager.accounts.get(admin_role)
+            admin_key = self.web3_manager.private_keys.get(admin_role)
+
+            # Build transaction
+            nonce = self.w3.eth.get_transaction_count(admin_address)
+            gas_price = self.w3.eth.gas_price
+
+            txn = self.contract.functions.assignRole(user_address, role).build_transaction({
+                'from': admin_address,
+                'nonce': nonce,
+                'gas': 100000,
+                'gasPrice': gas_price,
+                'chainId': self.w3.eth.chain_id
+            })
+
+            # Sign and send
+            signed_txn = self.w3.eth.account.sign_transaction(txn, admin_key)
+            tx_hash = self.w3.eth.send_raw_transaction(signed_txn.raw_transaction)
+
+            # Wait for receipt
+            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+
+            if receipt.status == 1:
+                return {
+                    "success": True,
+                    "user_address": user_address,
+                    "role": role,
+                    "tx_hash": tx_hash.hex(),
+                    "block_number": receipt.blockNumber
+                }
+            else:
+                raise Exception(f"Transaction failed with status {receipt.status}")
+
+        except Exception as e:
+            logger.error(f"❌ Assign role failed: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    def _get_proposal_id_from_receipt(self, receipt) -> int:
+        """Extract proposal ID from transaction receipt events"""
+        try:
+            # Get ProposalCreated event
+            event_signature_hash = self.w3.keccak(text="ProposalCreated(uint256,address,address,uint256)")
+
+            for log in receipt.logs:
+                if log.topics[0] == event_signature_hash:
+                    # First topic is proposal ID (indexed)
+                    proposal_id = int(log.topics[1].hex(), 16)
+                    return proposal_id
+
+            # Fallback: get from proposalCount
+            proposal_count = self.contract.functions.proposalCount().call()
+            return proposal_count
+
+        except Exception as e:
+            logger.warning(f"⚠️  Could not extract proposal ID from receipt: {e}")
+            # Return latest proposal count
+            return self.contract.functions.proposalCount().call()

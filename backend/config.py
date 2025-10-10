@@ -13,24 +13,28 @@ ASSETS_DIR = BACKEND_ROOT / "assets"
 MODEL_PACKAGE_DIR = ASSETS_DIR / "model_package"
 DATA_DIR = ASSETS_DIR / "data"
 
-# 区块链配置
-GANACHE_CONFIG = {
-    "mnemonic": "bulk tonight audit hover toddler orange boost twenty biology flower govern soldier",
+# DevLeChain 私有链配置
+DEVLECHAIN_CONFIG = {
     "rpc_url": "http://127.0.0.1:8545",
-    "block_time": 5,
+    "chain_id": 20000,
+    "network_id": 20000,
+    "keystore_dir": "/home/devlechain/ChainData/20000_20000_ethash_0/keystore",
+    "password": "devlechain",
+    "data_dir": "/home/devlechain/ChainData/20000_20000_ethash_0",
+
+    # DevLeChain 预配置账户(从 genesis.json)
     "accounts": {
-        "manager_0": 0,   # Manager 账户索引
-        "manager_1": 1,
-        "manager_2": 2,
-        "treasury": 3,    # 系统金库账户索引
-        "operator_0": 4,  # Operator 账户索引
-        "operator_1": 5,
-        "operator_2": 6,
-        "operator_3": 7,
-        "operator_4": 8,
-        "operator_5": 9,
+        "manager_0": "0x3BDEb75351468e39d60B32aF39df6f030C42E14f",
+        "manager_1": "0x96BDDef5e941Cf35B7f63193b53047ad40e9C568",
+        "manager_2": "0xa11B3Fdaad0E670fB5956456554FAB7Af850E701",
+        "treasury": "0xaA09248D29717Ed9be4114909dc3F1A0b8c71F4F",
+        "operator_0": "0x33273Cfda8d30889032c541c0Ccf1f50410008Af",
+        "operator_1": "0x76A929caE1551BA35d3eEB44fA6ff6A84A5334f3",
     }
 }
+
+# 向后兼容：使用DEVLECHAIN_CONFIG作为主配置
+GANACHE_CONFIG = DEVLECHAIN_CONFIG  # 使用DevLeChain配置
 
 # AI 模型配置
 AI_MODEL_CONFIG = {

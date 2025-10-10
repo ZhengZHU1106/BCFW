@@ -6,9 +6,13 @@ BCFW (Blockchain Firewall) 是一个集成了人工智能（AI）与区块链技
 #### 2. 系统架构
 系统由四个核心部分组成：
 *   **前端 (Frontend)**: 基于 **Vue 3 + Vite** 构建的现代化Web界面，是用户与系统交互的主窗口。
-*   **后端 (Backend)**: 基于 **FastAPI (Python)** 构建的高性能API服务，是系统的“大脑”，负责处理业务逻辑、与AI模型和区块链交互。
+*   **后端 (Backend)**: 基于 **FastAPI (Python)** 构建的高性能API服务，是系统的"大脑"，负责处理业务逻辑、与AI模型和区块链交互。
 *   **AI模型 (AI Model)**: 一个预训练的 **PyTorch** 模型 (`HierarchicalTransformerIDS`)，用于分类网络流量，识别DDoS、端口扫描等多种攻击。
-*   **区块链 (Blockchain)**: 使用 **Ganache** 模拟的以太坊网络，运行一个自定义的 **Solidity** 智能合约 (`MultiSigProposal.sol`)，负责处理提案的投票和执行。
+*   **区块链 (Blockchain)**: 使用 **DevLeChain** (Geth 1.10.22) 真实的以太坊私有链，运行一个自定义的 **Solidity** 智能合约 (`MultiSigProposal.sol`)，负责处理提案的投票和执行。
+
+**技术演进 (Phase 17完成):**
+*   **Phase 1-16**: 使用Ganache模拟器，HD钱包助记词管理账户
+*   **Phase 17**: 完成向DevLeChain真实私有链的迁移，Keystore文件管理账户，实现区块链优先架构
 
 #### 3. 完整功能拆解
 
@@ -40,13 +44,17 @@ BCFW (Blockchain Firewall) 是一个集成了人工智能（AI）与区块链技
     1.  **解除角色限制**: 在Demo Mode下，**无论当前选择什么角色，用户都可以在提案卡片上看到所有`Manager`的“Sign”和“Reject”按钮**。这允许演示者一人分饰多角，快速完成签名流程，而无需频繁切换角色。
     2.  **增强可视化**: 按钮上可能会有特殊标记（如`🎯`），以表明处于演示模式。
 
-**3.4. 网络拓扑与节点管理**
+**3.4. 网络拓扑与节点管理 (DevLeChain环境)**
 *   **可视化**: `Network.vue`页面通过Canvas动态展示所有节点（Managers, Operators, Treasury）的连接关系和状态。
-*   **节点配置**: 系统使用Ganache预定义的核心账户，通过固定助记词 `bulk tonight audit hover toddler orange boost twenty biology flower govern soldier` 确保核心账户地址的确定性。Manager账户（索引0-2）、Treasury账户（索引3）是不可删除的核心节点。
-*   **动态账户管理**:
-    - **创建功能**: 通过`AccountList.vue`组件的"Account Manager"可以**动态创建新的区块链账户**，系统会生成新的私钥并从Treasury为其转账初始资金。
-    - **删除功能**: 非核心节点可以通过`NodeDetail.vue`组件的"Delete Node"按钮**安全删除**，其账户余额会自动转回Treasury。
-    - **实时更新**: 新创建的节点会实时出现在网络拓扑中，删除的节点会立即从网络图中消失。
+*   **节点配置**: 系统使用DevLeChain的Keystore预定义核心账户：
+    - **Keystore位置**: `/home/devlechain/ChainData/20000_20000_ethash_0/keystore`
+    - **核心账户**: manager_0/1/2 (Manager角色), treasury (金库), operator_0/1 (Operator角色)
+    - **账户密码**: "devlechain" (配置在DEVLECHAIN_CONFIG中)
+    - **账户加载**: 使用eth_account.Account.decrypt()从Keystore文件解密私钥
+*   **账户管理变化 (Phase 17)**:
+    - **动态创建已废弃**: DevLeChain使用预定义Keystore账户，不支持运行时动态创建节点
+    - **API端点**: `/api/network/nodes/create` 已废弃，返回501错误
+    - **历史功能**: Phase 1-16的Ganache环境支持动态账户创建，现已移除
 
 **3.5. 历史与审计**
 `History.vue`页面提供了所有威胁检测日志和响应执行日志的完整列表，并以图表形式对攻击类型、置信度分布等进行了可视化分析，实现了完整的可追溯性。
@@ -106,7 +114,7 @@ BCFW (Blockchain Firewall) 是一个集成了人工智能（AI）与区块链技
 
 ---
 
-### 项目当前状态总结 (2025年9月)
+### 项目当前状态总结 (2025年10月)
 
 **✅ 已完成的主要功能:**
 - ✅ Phase 1-4: 完整的AI威胁检测+区块链多签决策系统
@@ -116,11 +124,20 @@ BCFW (Blockchain Firewall) 是一个集成了人工智能（AI）与区块链技
 - ✅ Phase 15: UI一致性优化，修复ThreatAlert组件显示问题
 - ✅ Phase 16: 置信度解释UX增强，实现轻量级tooltip系统
 - ✅ Phase A: 完整奖励池机制，基于贡献度的公平分配算法
+- ✅ **Phase 17: DevLeChain区块链迁移** - 从Ganache模拟器完全迁移到真实私有链
 
-**⚠️ 待完善的功能:**
-- ❌ **Withdraw提案功能**：前端UI完整，但后端`ProposalService.withdraw_proposal()`方法完全缺失，导致500错误
-- ❌ **Create Node API功能**：前端有完整的创建节点UI，但后端缺少对应的API端点(`/api/network/nodes` POST)
-- 🔄 **5秒延迟用户体验问题**：由于同步奖励分发给多个签名者导致的性能瓶颈（Phase 10计划中）
+**Phase 17核心变更:**
+- ✅ **区块链平台**: Ganache → DevLeChain (Geth 1.10.22, PoW ethash)
+- ✅ **账户管理**: HD钱包助记词 → Keystore文件解密加载
+- ✅ **数据架构**: 数据库优先 → 智能合约优先（数据库作为只读缓存）
+- ✅ **合约部署**: 0x5FbDB...0aa3 (Ganache) → 0x7A267...D992 (DevLeChain)
+- ✅ **业务逻辑**: 完全重构sign_proposal、create_proposal为区块链优先
+- ✅ **API调整**: 废弃动态节点创建API (DevLeChain使用预定义账户)
+
+**⚠️ 功能变化说明:**
+- ❌ **动态节点创建已废弃**: DevLeChain使用预定义Keystore账户，不支持运行时创建节点
+- ❌ **Withdraw提案功能**: 前端UI完整，但后端实现不完整（技术债务）
+- 🔄 **5秒延迟用户体验问题**: 由于同步奖励分发导致的性能瓶颈（Phase 10计划中）
 
 **🎯 未来发展方向:**
 - 🔄 Phase 10: 用户体验优化（异步奖励处理）
@@ -138,11 +155,12 @@ BCFW (Blockchain Firewall) 是一个集成了人工智能（AI）与区块链技
 - **影响**: 前端UI完整，但点击Withdraw按钮返回500错误
 - **修复需求**: 实现 `withdraw_proposal()` 方法，验证Operator权限，更新提案状态
 
-**问题2: Create Node API完全缺失**
-- **位置**: 前端Network页面有完整的"Add Node"功能UI
-- **问题**: 后端无任何 `/api/network/nodes` POST端点或相关逻辑
-- **影响**: 点击"Create Node"按钮无任何网络请求发出
-- **修复需求**: 实现节点创建API，包括Web3账户生成和初始资金转账
+**问题2: Create Node API已废弃 (Phase 17变更)**
+- **位置**: `/api/network/nodes/create` 端点
+- **状态**: 已废弃，返回501 Not Implemented错误
+- **原因**: DevLeChain使用预定义的Keystore账户，不支持运行时动态创建节点
+- **历史功能**: Phase 1-16的Ganache环境支持通过HD钱包动态创建账户
+- **当前机制**: 所有账户在系统启动时从Keystore加载，账户列表固定
 
 **问题3: 性能瓶颈分析**
 - **位置**: `backend/app/services.py:435-461` 同步奖励循环

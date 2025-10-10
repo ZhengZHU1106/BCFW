@@ -8,9 +8,13 @@ This is a blockchain-based intelligent security platform (区块链智能安防�
 
 **Key Components:**
 - AI threat detection using an `HierarchicalTransformerIDS` model trained on CIC-IDS2017 dataset
-- Ganache local blockchain network for development and testing
-- Custom multi-signature smart contract for decentralized decision-making
+- **DevLeChain** (Geth 1.10.22) private Ethereum blockchain with PoW consensus
+- Custom multi-signature smart contract deployed on DevLeChain for decentralized decision-making
 - Simulated security response execution and audit logging
+
+**Technical Evolution:**
+- **Phase 1-16**: Ganache local blockchain simulator (HD wallet with mnemonic)
+- **Phase 17**: Complete migration to DevLeChain real private blockchain (Keystore-based accounts)
 
 ## Project Architecture
 
@@ -21,29 +25,31 @@ This is a blockchain-based intelligent security platform (区块链智能安防�
 - `inference_data_7class.pt` - Pre-generated attack simulation data (697MB, complete dataset)
 - `selected_features.json`, `model_info.json` - Model metadata
 
-### Current Architecture (Phase 15 Complete - UI Optimized)
+### Current Architecture (Phase 17 Complete - DevLeChain Migration)
 ```
 backend/
 ├── app/                    # Business logic services (✅ Complete)
 │   └── services.py         # ThreatDetection, Proposal, SystemInfo, RewardPool services
+│                          # Blockchain-first architecture: smart contract is source of truth
 ├── assets/                 # Model deployment & configuration (✅ Complete)
 │   ├── model_package/      # HierarchicalTransformerIDS model files
 │   │   ├── model/         # Trained model artifacts (model.pth, scaler.pkl, etc.)
 │   │   ├── predictor.py   # Model prediction logic (fixed hierarchical decisions)
 │   │   └── model_architecture.py # PyTorch model definition
 │   ├── data/              # Inference data (inference_data_7class.pt)
-│   ├── multisig_contract.json    # MultiSig contract configuration
+│   ├── multisig_contract.json    # MultiSig contract configuration (DevLeChain)
 │   ├── multisig_interface.json  # Contract ABI interface
 │   └── *_state.json       # System state files (reward pool, contributions)
 ├── blockchain/             # Web3 blockchain integration (✅ Complete)
-│   ├── web3_manager.py     # Ganache connection + account management
-│   ├── multisig_contract.py # Custom MultiSig contract integration
+│   ├── web3_manager.py     # DevLeChain connection + Keystore account management
+│   ├── multisig_contract.py # Custom MultiSig contract integration (blockchain-first)
 │   └── multisig_contract.js # Contract deployment utilities
-├── database/               # SQLite data persistence (✅ Complete)
+├── database/               # SQLite data persistence (✅ Complete - READ-ONLY CACHE)
 │   ├── connection.py       # Database setup and sessions
 │   └── models.py           # Proposal, ExecutionLog, ThreatDetectionLog
+│                          # Database is now a read-only cache of blockchain state
 ├── main.py                # FastAPI application (✅ Complete)
-├── config.py              # System configuration
+├── config.py              # System configuration (DEVLECHAIN_CONFIG)
 └── requirements.txt       # Python dependencies
 
 contracts/                 # Smart contracts (✅ Complete)
@@ -64,12 +70,14 @@ frontend/                  # Vue 3 + Vite frontend (✅ Complete)
 └── package.json         # Frontend dependencies
 ```
 
-### System Roles & Accounts
-- **System Treasury Account**: High-balance account (1000 ETH) for incentive payments
-- **PoA Signer Accounts**: Node-specific accounts for consensus and block production
-- **Manager Business Accounts**: Decision-maker accounts for proposal signing (can be same as PoA accounts)
-- **Operator**: Front-line users who monitor alerts and manually create proposals for medium-confidence threats
-- **Manager**: Senior decision-makers who review and sign proposals
+### System Roles & Accounts (DevLeChain)
+- **System Treasury Account**: treasury - High-balance account for incentive payments
+- **Manager Accounts**: manager_0, manager_1, manager_2 - Decision-maker accounts loaded from Keystore
+- **Operator Accounts**: operator_0, operator_1 - Front-line operator accounts loaded from Keystore
+- **Keystore Location**: `/home/devlechain/ChainData/20000_20000_ethash_0/keystore`
+- **Account Password**: "devlechain" (configured in DEVLECHAIN_CONFIG)
+- **Operator Role**: Monitor alerts and manually create proposals for medium-confidence threats (smart contract enforced)
+- **Manager Role**: Review and sign/reject proposals (smart contract enforced)
 
 ### Core Workflow
 1. **Threat Detection**: AI model processes network data and assigns confidence scores
@@ -103,13 +111,16 @@ The project uses a custom `MultiSigProposal` smart contract written in Solidity 
 
 **Integration Architecture:**
 ```
-Traditional DB → MultiSig Contract → Reward Execution
-     ↓               ↓                    ↓
-Database Logs    Smart Contract      ETH Transfer
-                   Events            
+Smart Contract (Source of Truth) → Database Cache (Read-Only)
+     ↓                                      ↓
+Blockchain State                    UI Query Optimization
+     ↓
+Automatic Reward Execution
 ```
 
-**Contract Address**: `0x5FbDB2315678afecb367f032d93F642f64180aa3` (Ganache Local)
+**Contract Addresses:**
+- **DevLeChain (Current)**: `0x7A267CfB376816e398750dc80462a6d996EfD992` (Phase 17)
+- **Ganache (Historical)**: `0x5FbDB2315678afecb367f032d93F642f64180aa3` (Phase 1-16)
 
 ## AI Model Details
 
@@ -121,15 +132,15 @@ The project uses an `HierarchicalTransformerIDS` PyTorch model with the followin
 
 ## Development Commands
 
-**System Management (Phase 8 Complete - Contract-Level Role Separation):**
+**System Management (Phase 17 Complete - DevLeChain Integration):**
 ```bash
 # ⚡ UNIFIED SYSTEM CONTROL - Use system.sh for all operations:
 
-# Start all services (Ganache + Backend + Frontend)
+# Start all services (DevLeChain + Backend + Frontend)
 ./system.sh start
 
 # Stop all services and clean up
-./system.sh stop  
+./system.sh stop
 
 # Restart all services (stop + start)
 ./system.sh restart
@@ -144,9 +155,15 @@ The project uses an `HierarchicalTransformerIDS` PyTorch model with the followin
 # ./start_system.sh   # OLD - Use ./system.sh start
 # ./stop_system.sh    # OLD - Use ./system.sh stop
 
+# DevLeChain Management:
+# - DevLeChain must be started separately
+# - RPC endpoint: http://127.0.0.1:8545
+# - Chain ID: 20000, Network ID: 20000
+# - Accounts loaded from Keystore automatically
+
 # Manual operations (only if needed for debugging):
 python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
-node scripts/deploy_multisig_simple.js
+node scripts/deploy_multisig_simple.js  # Deploy contract to DevLeChain
 ```
 
 **Docker Deployment (Global Distribution):**
@@ -211,11 +228,19 @@ POST /api/test/auto-distribute  # Test automatic reward distribution
 - **Role Switching**: Dynamic role switching between Operator and Manager views
 - **Real Blockchain Integration**: Direct integration with Ganache for account creation and funding
 
-**Blockchain Environment:**
-- Ganache CLI with fixed mnemonic: `bulk tonight audit hover toddler orange boost twenty biology flower govern soldier`
-- Deterministic accounts: Manager_0-2 (indices 0-2), Treasury (index 3) 
+**Blockchain Environment (DevLeChain):**
+- DevLeChain (Geth 1.10.22) private Ethereum blockchain
+- Consensus: PoW (ethash), automatic block production
+- Network: `http://127.0.0.1:8545`
+- Chain ID: 20000, Network ID: 20000
+- Keystore Directory: `/home/devlechain/ChainData/20000_20000_ethash_0/keystore`
+- Accounts: manager_0/1/2, treasury, operator_0/1 (loaded from Keystore)
+- Password: "devlechain"
+
+**Historical Environment (Phase 1-16):**
+- Ganache CLI with mnemonic: `bulk tonight audit hover toddler orange boost twenty biology flower govern soldier`
+- Deterministic HD wallet accounts
 - Network: `http://127.0.0.1:8545`, 5-second block time
-- Alternative: Ganache Desktop with same mnemonic
 
 **Project Status:**
 - ✅ Phase 1: Environment and configuration complete
@@ -233,6 +258,7 @@ POST /api/test/auto-distribute  # Test automatic reward distribution
 - ✅ **Phase 9: Model Performance Optimization** - Fixed prediction logic and data preprocessing, achieved 99.30% binary accuracy and 98.90% multi-class accuracy
 - ✅ **Phase 15: UI Consistency Optimization** - Fixed ThreatAlert component display issues and Benign threat visualization, complete UI consistency
 - ✅ **Phase 16: Confidence Explanation UX Enhancement** - Implemented lightweight tooltip system with mathematical formulas for improved user experience
+- ✅ **Phase 17: DevLeChain Migration** - Complete migration from Ganache to real private blockchain, blockchain-first architecture with smart contract as source of truth
 
 **MultiSig Contract Features (Phase 4 Complete):**
 - ✅ Custom Solidity smart contract (`MultiSigProposal.sol`)
@@ -291,20 +317,31 @@ POST /api/test/auto-distribute  # Test automatic reward distribution
 
 ## Technical Implementation Details
 
-**Account Management:**
-- Fixed mnemonic ensures deterministic account addresses across restarts
-- Manager accounts (0-2) used for multi-signature proposal approval (2/3 threshold) or rejection (1-vote veto)
-- Treasury account (3) pays 0.01 ETH incentive to final proposal signer
-- Web3 integration handles all blockchain interactions via local Ganache
+**Account Management (DevLeChain):**
+- Keystore-based account loading from encrypted JSON files
+- eth_account.Account.decrypt() used to unlock accounts with password "devlechain"
+- Manager accounts (manager_0/1/2) for multi-signature proposal approval (2/3 threshold) or rejection (1-vote veto)
+- Treasury account pays ETH incentives and rewards
+- Operator accounts (operator_0/1) create proposals with smart contract permission enforcement
+- Web3.py handles all blockchain interactions via DevLeChain RPC (http://127.0.0.1:8545)
 
-**API Structure (Phase 15 Complete - UI Optimized):**
+**Historical Account Management (Phase 1-16):**
+- HD wallet with BIP39 mnemonic for deterministic addresses
+- Account generation from mnemonic indices
+
+**API Structure (Phase 17 Complete - DevLeChain Migration):**
 - **AI Integration**: HierarchicalTransformerIDS model in `assets/model_package/predictor.py` with fixed prediction logic
 - **Model Assets**: All trained artifacts in `assets/model_package/model/` (scikit-learn 1.7.1 compatible)
-- **Database**: SQLite with ThreatDetectionLog, Proposal, ExecutionLog models (extended with rejection tracking)
-- **Blockchain**: Web3.py integration with Ganache + custom MultiSig smart contract
-- **MultiSig Contract**: Python integration module (`blockchain/multisig_contract.py`) for seamless interaction
+- **Database**: SQLite with ThreatDetectionLog, Proposal, ExecutionLog models (READ-ONLY CACHE for UI queries)
+- **Blockchain**: Web3.py integration with DevLeChain + custom MultiSig smart contract (SOURCE OF TRUTH)
+- **MultiSig Contract**: Python integration module (`blockchain/multisig_contract.py`) with blockchain-first architecture
+  - Smart contract deployed at 0x7A267CfB376816e398750dc80462a6d996EfD992
+  - All proposal operations go to blockchain first, database syncs from blockchain
 - **Reward Pool System**: Persistent state management with contribution tracking and auto-distribution
 - **Services**: ThreatDetectionService, ProposalService, SystemInfoService, RewardPoolService (all in `app/services.py`)
+  - sign_proposal(): Calls smart contract first, then syncs to database cache
+  - _create_auto_proposal(): Creates blockchain proposal first, then database record
+  - create_manual_proposal(): New method for operator manual proposal creation
 - **Performance**: Verified 99.30% binary classification and 98.90% multi-class accuracy
 
 **Threat Detection Confidence Levels:**

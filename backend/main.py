@@ -669,11 +669,22 @@ async def get_available_node_indices():
 
 @app.post("/api/network/nodes/create")
 async def create_network_node(request_data: dict):
-    """创建新的网络节点"""
+    """创建新的网络节点 - DEPRECATED
+
+    注意：此API已废弃，因为DevLeChain使用预定义的keystore账户，不支持动态创建节点。
+    所有账户在系统启动时从keystore加载，无法在运行时创建新账户。
+    """
+    raise HTTPException(
+        status_code=501,
+        detail="Dynamic node creation is not supported with DevLeChain keystore mode. "
+               "All accounts are pre-defined in the blockchain keystore."
+    )
+
+    # 以下代码已废弃，仅保留用于参考
     try:
         from backend.config import GANACHE_CONFIG
         from eth_account import Account
-        
+
         node_type = request_data.get("type")  # "manager" or "operator"
         node_name = request_data.get("name", "")
         

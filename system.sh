@@ -13,7 +13,7 @@ show_usage() {
     echo "Usage: $0 [start|stop|restart|status]"
     echo ""
     echo "Commands:"
-    echo "  start    - Start all services (Ganache, Backend, Frontend)"
+    echo "  start    - Start all services (DevLeChain, Backend, Frontend)"
     echo "  stop     - Stop all services and clean up"
     echo "  restart  - Stop and then start all services"
     echo "  status   - Check status of all services"
@@ -67,42 +67,50 @@ start_system() {
     echo ""
 
     # Check if required commands exist
-    for cmd in ganache python3 node npm; do
+    for cmd in python3 npm; do
         if ! command_exists "$cmd"; then
             echo "❌ $cmd not found. Please install it first."
             exit 1
         fi
     done
 
+    # Check if DevLeChain geth exists
+    if [ ! -f "/home/devlechain/Applications/Ethereum/geth" ]; then
+        echo "❌ DevLeChain geth not found at /home/devlechain/Applications/Ethereum/geth"
+        exit 1
+    fi
+
     # Stop any existing services first
     echo "🧹 Cleaning up any existing services..."
     stop_system_quiet
 
-    # Step 1: Start Ganache blockchain
-    echo "🔗 Starting Ganache local blockchain..."
-    ganache --mnemonic "bulk tonight audit hover toddler orange boost twenty biology flower govern soldier" \
-            --blockTime 5 \
-            --host 127.0.0.1 \
-            --port 8545 \
-            --accounts 10 \
-            --defaultBalanceEther 1000 > ganache.log 2>&1 &
+    # Step 1: Start DevLeChain blockchain
+    echo "🔗 Starting DevLeChain blockchain..."
+    /home/devlechain/Applications/Ethereum/geth \
+        --datadir /home/devlechain/ChainData/20000_20000_ethash_0 \
+        --networkid 20000 \
+        --http --http.addr 0.0.0.0 --http.port 8545 \
+        --http.api "eth,net,web3,personal,miner" \
+        --allow-insecure-unlock \
+        --nodiscover --maxpeers 0 \
+        --mine --miner.threads 1 > devlechain.log 2>&1 &
 
-    GANACHE_PID=$!
-    echo "$GANACHE_PID" > .ganache.pid
-    echo "✅ Ganache started (PID: $GANACHE_PID)"
+    DEVLECHAIN_PID=$!
+    echo "$DEVLECHAIN_PID" > .devlechain.pid
+    echo "✅ DevLeChain started (PID: $DEVLECHAIN_PID)"
 
-    # Wait for Ganache to initialize
-    sleep 5
+    # Wait for DevLeChain to initialize
+    echo "⏳ Waiting for DevLeChain to initialize..."
+    sleep 10
 
-    # Step 2: Deploy MultiSig contract
-    echo "📝 Deploying MultiSig contract..."
-    if node scripts/deploy_multisig_simple.js; then
-        echo "✅ MultiSig contract deployed successfully"
-    else
-        echo "❌ Failed to deploy MultiSig contract"
+    # Verify DevLeChain is running
+    if ! curl -s -X POST http://127.0.0.1:8545 -H "Content-Type: application/json" \
+         -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' 2>/dev/null | grep -q '"result"'; then
+        echo "❌ DevLeChain failed to start properly"
         stop_system_quiet
         exit 1
     fi
+    echo "✅ DevLeChain blockchain is running"
 
     # Step 3: Start backend service
     echo "🐍 Starting FastAPI backend..."
@@ -134,7 +142,7 @@ start_system() {
     echo "   - Frontend: http://localhost:5173"
     echo "   - Backend API: http://localhost:8000"
     echo "   - API Documentation: http://localhost:8000/docs"
-    echo "   - Ganache RPC: http://127.0.0.1:8545"
+    echo "   - DevLeChain RPC: http://127.0.0.1:8545"
     echo ""
     echo "🛑 To stop the system, run: $0 stop"
 }
@@ -144,13 +152,13 @@ stop_system_quiet() {
     # Stop services using PID files
     kill_by_pid_file ".frontend.pid" "Frontend"
     kill_by_pid_file ".backend.pid" "Backend"
-    kill_by_pid_file ".ganache.pid" "Ganache"
+    kill_by_pid_file ".devlechain.pid" "DevLeChain"
 
     # Wait a bit for graceful shutdown
     sleep 2
 
     # Force kill any remaining processes - more aggressive approach
-    processes_to_kill=("uvicorn" "vite" "ganache" "node.*ganache" "python.*uvicorn" "npm.*dev")
+    processes_to_kill=("uvicorn" "vite" "geth" "python.*uvicorn" "npm.*dev")
     for process in "${processes_to_kill[@]}"; do
         if pgrep -f "$process" > /dev/null; then
             pkill -f "$process" 2>/dev/null
@@ -187,8 +195,8 @@ stop_system_quiet() {
     done
 
     # Clean up files
-    rm -f ganache.log backend.log frontend.log *.log
-    rm -f .ganache.pid .backend.pid .frontend.pid .*.pid
+    rm -f devlechain.log backend.log frontend.log *.log
+    rm -f .devlechain.pid .backend.pid .frontend.pid .*.pid
 }
 
 # Function to stop the system (with output)
@@ -225,16 +233,16 @@ check_status() {
     echo "🔍 System Status Check:"
     echo ""
 
-    # Check Ganache
+    # Check DevLeChain
     if port_in_use 8545; then
         if curl -s -m 5 http://127.0.0.1:8545 -X POST -H "Content-Type: application/json" \
            -d '{"jsonrpc":"2.0","method":"net_version","params":[],"id":1}' 2>/dev/null | grep -q '"result"'; then
-            echo "✅ Ganache blockchain: Running (Port 8545)"
+            echo "✅ DevLeChain blockchain: Running (Port 8545)"
         else
-            echo "⚠️  Ganache blockchain: Port occupied but not responding correctly"
+            echo "⚠️  DevLeChain blockchain: Port occupied but not responding correctly"
         fi
     else
-        echo "❌ Ganache blockchain: Not running"
+        echo "❌ DevLeChain blockchain: Not running"
     fi
 
     # Check Backend
@@ -264,7 +272,7 @@ check_status() {
     echo "   - Frontend: http://localhost:5173"
     echo "   - Backend API: http://localhost:8000"
     echo "   - API Documentation: http://localhost:8000/docs"
-    echo "   - Ganache RPC: http://127.0.0.1:8545"
+    echo "   - DevLeChain RPC: http://127.0.0.1:8545"
 }
 
 # Function to restart the system
