@@ -12,6 +12,7 @@ import numpy as np
 import torch
 import os
 import sys
+import threading
 
 from ..database.models import Proposal, ExecutionLog, ThreatDetectionLog
 from ..blockchain.web3_manager import get_web3_manager
@@ -454,18 +455,8 @@ class ThreatDetectionService:
         return execution_log
 
     def _create_auto_proposal(self, db: Session, detection_result: Dict, target_ip: str) -> Proposal:
-        """创建自动提案 - 区块链优先模式"""
-        # 1. 先在智能合约上创建提案
-        threat_type = detection_result.get('predicted_class', 'Unknown')
-        data_string = f'Auto-block IP {target_ip} - {threat_type}'
-        contract_result = self.web3_manager.create_multisig_proposal(
-            target_role="treasury",  # 奖励从treasury发出
-            amount_eth=INCENTIVE_CONFIG['proposal_reward'],
-            data=f"0x{data_string.encode().hex()}",
-            creator_role="operator_0"  # 使用operator_0账户创建（系统代理）
-        )
-
-        # 2. 然后在数据库中创建缓存记录
+        """创建自动提案 - 区块链优先模式（优化：等待区块链确认，最多10秒）"""
+        # 1. 先在数据库中创建记录
         proposal = Proposal(
             threat_type=detection_result['predicted_class'],
             confidence=detection_result['confidence'],
@@ -474,17 +465,76 @@ class ThreatDetectionService:
             target_ip=target_ip,
             action_type="block",
             detection_data=detection_result,
-            contract_proposal_id=contract_result.get("proposal_id") if contract_result.get("success") else None,
-            contract_address=contract_result.get("contract_address") if contract_result.get("success") else None
+            contract_proposal_id=None,  # 稍后由后台线程更新
+            contract_address=None
         )
 
         db.add(proposal)
-        db.flush()
+        db.commit()  # 立即提交，确保数据库记录存在
 
-        if contract_result.get("success"):
-            logger.info(f"📝 自动创建区块链提案: DB-ID-{proposal.id}, Contract-ID-{contract_result['proposal_id']}, TX-{contract_result.get('tx_hash')}")
+        proposal_id = proposal.id
+        logger.info(f"📝 创建数据库提案记录: DB-ID-{proposal_id}")
+
+        # 2. 使用Event来同步主线程和后台线程
+        blockchain_ready = threading.Event()
+
+        # 2. 在后台线程中创建区块链提案
+        def create_blockchain_proposal_async():
+            """后台线程：异步创建区块链提案"""
+            from ..database.connection import get_db
+            try:
+                threat_type = detection_result.get('predicted_class', 'Unknown')
+                data_string = f'Auto-block IP {target_ip} - {threat_type}'
+
+                # 调用智能合约（可能需要等待挖矿）
+                logger.info(f"🔄 后台线程开始创建区块链提案: DB-ID-{proposal_id}")
+                contract_result = self.web3_manager.create_multisig_proposal(
+                    target_role="treasury",
+                    amount_eth=INCENTIVE_CONFIG['proposal_reward'],
+                    data=f"0x{data_string.encode().hex()}",
+                    creator_role="operator_0"
+                )
+
+                # 3. 更新数据库记录（使用新的session）
+                db_session = next(get_db())
+                try:
+                    db_proposal = db_session.query(Proposal).filter(Proposal.id == proposal_id).first()
+                    if db_proposal:
+                        if contract_result.get("success"):
+                            db_proposal.contract_proposal_id = contract_result.get("proposal_id")
+                            db_proposal.contract_address = contract_result.get("contract_address")
+                            db_session.commit()
+                            logger.info(f"✅ 区块链提案创建成功: DB-ID-{proposal_id}, Contract-ID-{contract_result['proposal_id']}")
+                        else:
+                            logger.warning(f"⚠️ 区块链提案创建失败: {contract_result.get('error')} - 保留数据库记录")
+                except Exception as e:
+                    logger.error(f"❌ 更新数据库记录失败: {e}")
+                    db_session.rollback()
+                finally:
+                    db_session.close()
+                    # 无论成功失败，都通知主线程
+                    blockchain_ready.set()
+
+            except Exception as e:
+                logger.error(f"❌ 后台线程区块链提案创建失败: {e}")
+                blockchain_ready.set()  # 即使失败也要通知主线程
+
+        # 启动后台线程（守护线程，主进程退出时自动结束）
+        thread = threading.Thread(target=create_blockchain_proposal_async, daemon=True)
+        thread.start()
+        logger.info(f"🚀 已启动后台线程处理区块链提案")
+
+        # 3. 等待区块链提案创建完成（最多10秒）
+        logger.info(f"⏳ 等待区块链提案创建完成（最多10秒）...")
+        blockchain_ready.wait(timeout=10)
+
+        # 4. 重新查询数据库获取最新的contract_proposal_id
+        db.refresh(proposal)
+
+        if proposal.contract_proposal_id:
+            logger.info(f"✅ 提案创建完成: DB-ID-{proposal_id}, Contract-ID-{proposal.contract_proposal_id}")
         else:
-            logger.error(f"❌ 区块链提案创建失败: {contract_result.get('error')} - 仅在数据库创建记录")
+            logger.warning(f"⚠️ 提案创建超时或失败: DB-ID-{proposal_id}, contract_proposal_id未设置")
 
         return proposal
 
@@ -577,7 +627,7 @@ class ProposalService:
     # 签名和拒绝操作现在通过 MultiSigContract 处理，确保完整的奖励分发和贡献度更新
 
     def sign_proposal(self, db: Session, proposal_id: int, signer_role: str) -> Dict:
-        """Manager签名提案 - 区块链优先模式"""
+        """Manager签名提案 - 区块链优先模式（优化：异步状态同步）"""
         try:
             # 1. 查找数据库中的提案（获取contract_proposal_id）
             proposal = db.query(Proposal).filter(Proposal.id == proposal_id).first()
@@ -598,56 +648,83 @@ class ProposalService:
             if not contract_result.get("success"):
                 raise ValueError(f"Smart contract signing failed: {contract_result.get('error')}")
 
-            # 3. 从区块链同步最新状态到数据库缓存
-            contract_proposal = self.web3_manager.get_multisig_proposal(contract_proposal_id)
-            if contract_proposal.get("success") and contract_proposal.get("proposal"):
-                blockchain_data = contract_proposal["proposal"]
+            # 3. 快速更新：立即更新签名者信息，稍后异步同步完整状态
+            signed_by = proposal.signed_by or []
+            if signer_role not in signed_by:
+                signed_by.append(signer_role)
+                proposal.signed_by = signed_by
+                from sqlalchemy.orm.attributes import flag_modified
+                flag_modified(proposal, 'signed_by')
 
-                # 更新数据库缓存
-                proposal.signatures_count = blockchain_data["signature_count"]
-                proposal.executed = blockchain_data["executed"]
+            # 增加签名计数（临时估算，后台线程会同步准确值）
+            proposal.signatures_count = len(signed_by)
 
-                # 更新签名者列表（从区块链事件推断）
-                signed_by = proposal.signed_by or []
-                if signer_role not in signed_by:
-                    signed_by.append(signer_role)
-                    proposal.signed_by = signed_by
-                    from sqlalchemy.orm.attributes import flag_modified
-                    flag_modified(proposal, 'signed_by')
+            db.commit()
 
-                # 如果已执行，更新状态
-                if blockchain_data["executed"]:
-                    proposal.status = 'approved'
-                    proposal.approved_at = datetime.utcnow()
+            logger.info(f"✅ Proposal signed on blockchain: DB-ID-{proposal_id}, Contract-ID-{contract_proposal_id}, returning immediately")
 
-                    # 记录执行日志
-                    execution_log = ExecutionLog(
-                        proposal_id=proposal_id,
-                        action_type=proposal.action_type or 'block',
-                        target_ip=proposal.target_ip,
-                        manager_account=signer_role,
-                        execution_status='success',
-                        execution_details=f"Proposal executed on blockchain, tx_hash: {contract_result.get('tx_hash')}"
-                    )
-                    db.add(execution_log)
+            # 4. 在后台线程中异步同步完整状态和处理奖励
+            def sync_proposal_state_async():
+                """后台线程：异步同步提案状态"""
+                from ..database.connection import get_db
+                try:
+                    logger.info(f"🔄 后台同步提案状态: DB-ID-{proposal_id}")
 
-                db.commit()
+                    # 从区块链获取最新状态
+                    contract_proposal = self.web3_manager.get_multisig_proposal(contract_proposal_id)
+                    if contract_proposal.get("success") and contract_proposal.get("proposal"):
+                        blockchain_data = contract_proposal["proposal"]
 
-                logger.info(f"✅ Proposal signed on blockchain: DB-ID-{proposal_id}, Contract-ID-{contract_proposal_id}, Signatures-{proposal.signatures_count}/2")
+                        # 更新数据库
+                        db_session = next(get_db())
+                        try:
+                            db_proposal = db_session.query(Proposal).filter(Proposal.id == proposal_id).first()
+                            if db_proposal:
+                                db_proposal.signatures_count = blockchain_data["signature_count"]
+                                db_proposal.executed = blockchain_data["executed"]
 
-                return {
-                    "success": True,
-                    "proposal_id": proposal_id,
-                    "contract_proposal_id": contract_proposal_id,
-                    "signer_role": signer_role,
-                    "signature_count": proposal.signatures_count,
-                    "required_signatures": 2,
-                    "executed": proposal.executed,
-                    "tx_hash": contract_result.get("tx_hash"),
-                    "block_number": contract_result.get("block_number")
-                }
-            else:
-                raise ValueError("Failed to sync proposal state from blockchain")
+                                # 如果已执行，更新状态并记录日志
+                                if blockchain_data["executed"] and db_proposal.status != 'approved':
+                                    db_proposal.status = 'approved'
+                                    db_proposal.approved_at = datetime.utcnow()
+
+                                    # 记录执行日志
+                                    execution_log = ExecutionLog(
+                                        proposal_id=proposal_id,
+                                        action_type=db_proposal.action_type or 'block',
+                                        target_ip=db_proposal.target_ip,
+                                        manager_account=signer_role,
+                                        execution_status='success',
+                                        execution_details=f"Proposal executed on blockchain, tx_hash: {contract_result.get('tx_hash')}"
+                                    )
+                                    db_session.add(execution_log)
+
+                                    logger.info(f"✅ 提案已执行并记录: DB-ID-{proposal_id}")
+
+                                db_session.commit()
+                                logger.info(f"✅ 后台状态同步完成: DB-ID-{proposal_id}")
+                        finally:
+                            db_session.close()
+                except Exception as e:
+                    logger.error(f"❌ 后台状态同步失败: {e}")
+
+            # 启动后台线程
+            thread = threading.Thread(target=sync_proposal_state_async, daemon=True)
+            thread.start()
+
+            # 5. 立即返回结果（不等待后台同步完成）
+            return {
+                "success": True,
+                "proposal_id": proposal_id,
+                "contract_proposal_id": contract_proposal_id,
+                "signer_role": signer_role,
+                "signature_count": proposal.signatures_count,  # 临时估算值
+                "required_signatures": 2,
+                "executed": False,  # 后台线程会更新准确状态
+                "tx_hash": contract_result.get("tx_hash"),
+                "block_number": contract_result.get("block_number"),
+                "note": "Signature confirmed, state sync in progress"
+            }
 
         except Exception as e:
             logger.error(f"❌ Sign proposal failed: {e}")
@@ -655,13 +732,9 @@ class ProposalService:
             return {"success": False, "error": str(e)}
     
     def reject_proposal(self, db: Session, proposal_id: int, manager_role: str) -> Dict:
-        """Manager拒绝提案（1-vote veto）
-
-        注意：当前智能合约未实现rejectProposal函数，此功能仅在数据库层面实现。
-        TODO: 需要在MultiSigProposal.sol中添加reject功能以实现真正的区块链拒绝。
-        """
+        """Manager拒绝提案（1-vote veto）- 区块链优先模式"""
         try:
-            # 查找提案
+            # 1. 查找数据库中的提案（获取contract_proposal_id）
             proposal = db.query(Proposal).filter(Proposal.id == proposal_id).first()
             if not proposal:
                 raise ValueError(f"Proposal {proposal_id} not found")
@@ -669,26 +742,80 @@ class ProposalService:
             if proposal.status != 'pending':
                 raise ValueError(f"Proposal {proposal_id} is not pending")
 
-            # 执行拒绝（数据库层面，等待智能合约支持）
+            contract_proposal_id = proposal.contract_proposal_id
+            if contract_proposal_id is None:
+                raise ValueError(f"Proposal {proposal_id} has no contract_proposal_id")
+
+            # 2. 调用智能合约拒绝（区块链是唯一真实状态）
+            logger.info(f"❌ Rejecting proposal on blockchain: Contract-ID-{contract_proposal_id}, DB-ID-{proposal_id}, Rejector-{manager_role}")
+            contract_result = self.web3_manager.reject_multisig_proposal(contract_proposal_id, manager_role)
+
+            if not contract_result.get("success"):
+                raise ValueError(f"Smart contract rejection failed: {contract_result.get('error')}")
+
+            # 3. 同步到数据库缓存
             proposal.status = 'rejected'
             proposal.rejected_at = datetime.utcnow()
             proposal.rejected_by = manager_role
 
             db.commit()
 
-            logger.warning(f"⚠️  Proposal {proposal_id} rejected in database only (smart contract does not support rejection yet)")
+            logger.info(f"✅ Proposal {proposal_id} rejected on blockchain and synced to database")
 
             return {
                 "success": True,
                 "proposal_id": proposal_id,
+                "contract_proposal_id": contract_proposal_id,
                 "rejected_by": manager_role,
                 "rejected_at": proposal.rejected_at.isoformat(),
-                "warning": "Rejection only recorded in database, not on blockchain"
+                "tx_hash": contract_result.get("tx_hash"),
+                "block_number": contract_result.get("block_number")
+            }
+
+        except Exception as e:
+            logger.error(f"❌ Reject proposal failed: {e}")
+            db.rollback()
+            return {"success": False, "error": str(e)}
+
+    def withdraw_proposal(self, db: Session, proposal_id: int, operator_role: str) -> Dict:
+        """Operator撤回提案
+
+        注意：当前智能合约未实现withdrawProposal函数，此功能仅在数据库层面实现。
+        TODO: 需要在MultiSigProposal.sol中添加withdraw功能以实现真正的区块链撤回。
+        """
+        try:
+            # 1. 查找提案
+            proposal = db.query(Proposal).filter(Proposal.id == proposal_id).first()
+            if not proposal:
+                raise ValueError(f"Proposal {proposal_id} not found")
+
+            # 2. 验证状态（只有pending状态的提案可以被撤回）
+            if proposal.status != 'pending':
+                raise ValueError(f"Only pending proposals can be withdrawn (current status: {proposal.status})")
+
+            # 3. 验证权限（只有operator可以撤回）
+            if not operator_role.startswith('operator_'):
+                raise ValueError("Only operators can withdraw proposals")
+
+            # 4. 执行撤回（数据库层面）
+            proposal.status = 'withdrawn'
+            proposal.withdrawn_at = datetime.utcnow()
+            proposal.withdrawn_by = operator_role
+
+            db.commit()
+
+            logger.info(f"📤 Proposal {proposal_id} withdrawn by {operator_role}")
+
+            return {
+                "proposal_id": proposal_id,
+                "withdrawn_by": operator_role,
+                "withdrawn_at": proposal.withdrawn_at.isoformat()
             }
 
         except Exception as e:
             db.rollback()
-            return {"success": False, "error": str(e)}
+            logger.error(f"❌ Withdraw proposal {proposal_id} failed: {e}")
+            raise ValueError(str(e))
 
     # Note: _update_manager_contribution() method removed
     # Contributions are now automatically tracked in the smart contract when managers sign proposals
@@ -868,6 +995,59 @@ class RewardPoolService:
                 "error": f"Deposit failed: {str(e)}"
             }
     
+    def withdraw_from_reward_pool(self, to_role: str, amount: float) -> Dict:
+        """从奖金池提取资金 - Operator操作"""
+        try:
+            # 验证金额
+            if amount <= 0:
+                return {
+                    "success": False,
+                    "error": "Withdrawal amount must be greater than 0"
+                }
+
+            # 获取reward pool当前余额
+            pool_info_result = self.web3_manager.get_reward_pool_info()
+            if not pool_info_result.get('success'):
+                return {
+                    "success": False,
+                    "error": "Failed to get reward pool balance"
+                }
+
+            current_balance = pool_info_result['pool_info']['balance']
+            if current_balance < amount:
+                return {
+                    "success": False,
+                    "error": f"Insufficient balance in reward pool. Available: {current_balance} ETH"
+                }
+
+            # 执行提取操作
+            result = self.web3_manager.withdraw_from_reward_pool(to_role, amount)
+
+            if result.get('success'):
+                # 从智能合约读取最新余额
+                pool_info_result = self.web3_manager.get_reward_pool_info()
+                new_balance = pool_info_result['pool_info']['balance'] if pool_info_result.get('success') else (current_balance - amount)
+
+                return {
+                    "success": True,
+                    "message": f"Successfully withdrew {amount} ETH from reward pool",
+                    "recipient_role": to_role,
+                    "amount": amount,
+                    "new_balance": new_balance,
+                    "tx_hash": result.get('tx_hash')
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": result.get('error', 'Failed to execute withdrawal transaction')
+                }
+        except Exception as e:
+            logger.error(f"Withdrawal failed: {e}")
+            return {
+                "success": False,
+                "error": f"Withdrawal failed: {str(e)}"
+            }
+
     def _auto_distribute_on_execution(self) -> Dict:
         """提案执行时自动分配奖励 - 现有功能保持不变"""
         try:

@@ -22,7 +22,7 @@ DEVLECHAIN_CONFIG = {
     "password": "devlechain",
     "data_dir": "/home/devlechain/ChainData/20000_20000_ethash_0",
 
-    # DevLeChain 预配置账户(从 genesis.json)
+    # DevLeChain 预配置账户(从 genesis.json + 新创建的operator账户)
     "accounts": {
         "manager_0": "0x3BDEb75351468e39d60B32aF39df6f030C42E14f",
         "manager_1": "0x96BDDef5e941Cf35B7f63193b53047ad40e9C568",
@@ -30,8 +30,16 @@ DEVLECHAIN_CONFIG = {
         "treasury": "0xaA09248D29717Ed9be4114909dc3F1A0b8c71F4F",
         "operator_0": "0x33273Cfda8d30889032c541c0Ccf1f50410008Af",
         "operator_1": "0x76A929caE1551BA35d3eEB44fA6ff6A84A5334f3",
+        # 账户池 - 额外的operator账户（默认隐藏）
+        "operator_2": "0x0e2985cab47a5fe4200bfa63daf25c5eec17e918",
+        "operator_3": "0xd23974858ea0f7b33bb0e1288c6cc3cf6858a0b5",
+        "operator_4": "0x4d531c0209e7fdbb3868a32635ed8afbcadc6cb6",
+        "operator_5": "0x7facb7e5d56b29806601cf2f697a9f6df193b1bc",
     }
 }
+
+# 隐藏节点配置 - 默认隐藏的operator账户
+HIDDEN_NODES = ["operator_2", "operator_3", "operator_4", "operator_5"]
 
 # 向后兼容：使用DEVLECHAIN_CONFIG作为主配置
 GANACHE_CONFIG = DEVLECHAIN_CONFIG  # 使用DevLeChain配置

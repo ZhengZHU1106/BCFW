@@ -138,17 +138,41 @@
           <div class="pool-actions">
             <div class="action-item">
               <label for="deposit-amount">Deposit Amount (ETH):</label>
-              <input 
-                id="deposit-amount" 
-                v-model.number="depositAmount" 
-                type="number" 
-                step="0.01" 
-                min="0.01" 
+              <input
+                id="deposit-amount"
+                v-model.number="depositAmount"
+                type="number"
+                step="0.01"
+                min="0.01"
                 class="form-control"
                 placeholder="0.10"
               >
               <button @click="depositToPool" class="btn btn-success" :disabled="isDepositing || !depositAmount">
                 {{ isDepositing ? 'Depositing...' : 'Deposit to Pool' }}
+              </button>
+            </div>
+            <div class="action-item">
+              <label for="withdraw-to-role">Withdraw to Role (Operator Only):</label>
+              <select
+                id="withdraw-to-role"
+                v-model="withdrawToRole"
+                class="form-control"
+              >
+                <option value="operator_0">Operator 0</option>
+                <option value="operator_1">Operator 1</option>
+              </select>
+              <label for="withdraw-amount">Withdraw Amount (ETH):</label>
+              <input
+                id="withdraw-amount"
+                v-model.number="withdrawAmount"
+                type="number"
+                step="0.01"
+                min="0.01"
+                class="form-control"
+                placeholder="1.00"
+              >
+              <button @click="withdrawFromPool" class="btn btn-warning" :disabled="isWithdrawing || !withdrawAmount || !withdrawToRole">
+                {{ isWithdrawing ? 'Withdrawing...' : 'Withdraw from Pool' }}
               </button>
             </div>
             <div class="action-item">
@@ -204,6 +228,9 @@ const rewardPoolInfo = ref({
 const managerContributions = ref({})
 const depositAmount = ref(0.1)
 const isDepositing = ref(false)
+const withdrawAmount = ref(1.0)
+const withdrawToRole = ref('operator_0')
+const isWithdrawing = ref(false)
 
 // Timer
 let statusTimer = null
@@ -214,20 +241,20 @@ const fetchSystemStatus = async () => {
     console.log('Fetching system status...')
     const result = await systemAPI.getStatus()
     console.log('API Response:', result)
-    
+
     // Backend response format: {success: true, data: {...}, message: "..."}
     // API client has already extracted response.data, so result is the full response body
     const status = result.data
-    
+
     isConnected.value = status.network?.is_connected || false
     blockHeight.value = status.network?.block_number || 0
     networkStatus.value = status.network?.is_connected ? 'Running' : 'Connection Failed'
-    
+
     // Update account information
     if (status.accounts && Array.isArray(status.accounts)) {
       const managerAccounts = status.accounts.filter(acc => acc.role.startsWith('manager'))
       const treasuryAccount = status.accounts.find(acc => acc.role === 'treasury')
-      
+
       accounts.value = [
         {
           name: 'Manager 0',
@@ -259,21 +286,33 @@ const fetchSystemStatus = async () => {
         }
       ]
     }
-    
+
     lastUpdate.value = new Date().toLocaleTimeString('en-US')
-    
+
     // Fetch reward pool info
     await fetchRewardPoolInfo()
     await fetchManagerContributions()
-    
+
     // Check for recent system activity to update flow status
     await checkSystemActivity()
-    
+
   } catch (error) {
     console.error('Failed to fetch system status:', error)
     console.error('Error details:', error.response?.data || error.message)
-    isConnected.value = false
-    networkStatus.value = 'Connection Error'
+
+    // 保留现有数据，只标记为disconnected
+    // 不要清空accounts、blockHeight等数据
+    if (isConnected.value === true) {
+      // 首次失败才标记为disconnected
+      isConnected.value = false
+      networkStatus.value = 'Connection Error'
+    }
+
+    // 如果是首次加载（无数据），尝试重试
+    if (accounts.value.length === 0) {
+      console.log('First load failed, retrying in 3s...')
+      setTimeout(fetchSystemStatus, 3000)
+    }
   }
 }
 
@@ -318,7 +357,7 @@ const refreshContributions = async () => {
 // Deposit to reward pool
 const depositToPool = async () => {
   if (isDepositing.value || !depositAmount.value) return
-  
+
   isDepositing.value = true
   try {
     const result = await systemAPI.depositToRewardPool('treasury', depositAmount.value)
@@ -334,6 +373,29 @@ const depositToPool = async () => {
     alert('Deposit failed. Please check backend service.')
   } finally {
     isDepositing.value = false
+  }
+}
+
+// Withdraw from reward pool
+const withdrawFromPool = async () => {
+  if (isWithdrawing.value || !withdrawAmount.value || !withdrawToRole.value) return
+
+  isWithdrawing.value = true
+  try {
+    const result = await systemAPI.withdrawFromRewardPool(withdrawToRole.value, withdrawAmount.value)
+    if (result.success) {
+      alert(`Successfully withdrew ${withdrawAmount.value} ETH from reward pool to ${withdrawToRole.value}!`)
+      await fetchRewardPoolInfo()
+      await fetchSystemStatus() // Refresh account balances
+      withdrawAmount.value = 1.0 // Reset to default
+    } else {
+      alert(`Failed to withdraw: ${result.error || 'Unknown error'}`)
+    }
+  } catch (error) {
+    console.error('Withdraw failed:', error)
+    alert(`Withdraw failed: ${error.response?.data?.detail || error.message || 'Please check backend service.'}`)
+  } finally {
+    isWithdrawing.value = false
   }
 }
 
@@ -882,6 +944,17 @@ onUnmounted(() => {
 .btn-info:hover:not(:disabled) {
   background-color: #138496;
   border-color: #117a8b;
+}
+
+.btn-warning {
+  background-color: #ffc107;
+  color: #212529;
+  border: 1px solid #ffc107;
+}
+
+.btn-warning:hover:not(:disabled) {
+  background-color: #e0a800;
+  border-color: #d39e00;
 }
 
 .auto-distribution-info {

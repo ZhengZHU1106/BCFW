@@ -1,9 +1,9 @@
 {
-  "address": "0x7969b703a9C102B53b27E8F29b94338a706185Ae",
+  "address": "0x18665064FE254208c7003030e6ecc6F322aDE9e0",
   "deployer": "0x3BDEb75351468e39d60B32aF39df6f030C42E14f",
-  "tx_hash": "6cb591037c0cc4f70018b817e33aa3e7d192ca7c67f695fb61fe551d808272fc",
-  "block_number": 35,
-  "gas_used": 3881497,
+  "tx_hash": "060fa44e5047913350ca1e1d469f640b6f0e234d5ecf16ee3dfdae6c3d240d1b",
+  "block_number": 732,
+  "gas_used": 2347984,
   "owners": [
     "0x3BDEb75351468e39d60B32aF39df6f030C42E14f",
     "0x96BDDef5e941Cf35B7f63193b53047ad40e9C568",
@@ -138,6 +138,25 @@
         }
       ],
       "name": "ProposalExecuted",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "proposalId",
+          "type": "uint256"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "rejector",
+          "type": "address"
+        }
+      ],
+      "name": "ProposalRejected",
       "type": "event"
     },
     {
@@ -502,6 +521,16 @@
           "type": "bool"
         },
         {
+          "internalType": "bool",
+          "name": "rejected",
+          "type": "bool"
+        },
+        {
+          "internalType": "address",
+          "name": "rejectedBy",
+          "type": "address"
+        },
+        {
           "internalType": "uint256",
           "name": "signatureCount",
           "type": "uint256"
@@ -725,6 +754,16 @@
           "type": "bool"
         },
         {
+          "internalType": "bool",
+          "name": "rejected",
+          "type": "bool"
+        },
+        {
+          "internalType": "address",
+          "name": "rejectedBy",
+          "type": "address"
+        },
+        {
           "internalType": "uint256",
           "name": "signatureCount",
           "type": "uint256"
@@ -741,6 +780,19 @@
         }
       ],
       "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "proposalId",
+          "type": "uint256"
+        }
+      ],
+      "name": "rejectProposal",
+      "outputs": [],
+      "stateMutability": "nonpayable",
       "type": "function"
     },
     {

@@ -62,3 +62,13 @@ junit.xml
 # Large data directories
 original_data/
 reference_implementations/ 
+# Process ID files
+.backend.pid
+.devlechain.pid
+.frontend.pid
+
+# Playwright MCP
+.playwright-mcp/
+
+# Solidity build artifacts
+contracts/build/

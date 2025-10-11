@@ -462,10 +462,10 @@ async def deposit_to_reward_pool(request_data: dict):
     try:
         from_role = request_data.get("from_role", "treasury")
         amount = request_data.get("amount", 0.1)
-        
+
         if amount <= 0:
             raise HTTPException(status_code=400, detail="充值金额必须大于0")
-        
+
         result = reward_pool_service.deposit_to_reward_pool(from_role, amount)
         return {
             "success": result["success"],
@@ -480,6 +480,40 @@ async def deposit_to_reward_pool(request_data: dict):
         }
     except Exception as e:
         logger.error(f"奖金池充值失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/reward-pool/withdraw")
+async def withdraw_from_reward_pool(request_data: dict):
+    """从奖金池提取资金（Operator操作）"""
+    try:
+        to_role = request_data.get("to_role")
+        amount = request_data.get("amount")
+
+        if not to_role:
+            raise HTTPException(status_code=400, detail="to_role is required")
+
+        if not amount or amount <= 0:
+            raise HTTPException(status_code=400, detail="提取金额必须大于0")
+
+        result = reward_pool_service.withdraw_from_reward_pool(to_role, amount)
+
+        if result.get("success"):
+            return {
+                "success": True,
+                "message": result.get("message", "奖金池提取操作完成"),
+                "data": {
+                    "recipient_role": result.get("recipient_role"),
+                    "amount": result.get("amount"),
+                    "new_balance": result.get("new_balance"),
+                    "tx_hash": result.get("tx_hash")
+                }
+            }
+        else:
+            raise HTTPException(status_code=400, detail=result.get("error"))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"奖金池提取失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # 手动分配API已移除 - 现在使用自动分配机制
@@ -785,6 +819,169 @@ async def create_network_node(request_data: dict):
         }
     except Exception as e:
         logger.error(f"节点创建失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/proposals/cleanup-invalid")
+async def cleanup_invalid_proposals(db: Session = Depends(get_db)):
+    """清理无效的遗留提案（contract_proposal_id为None的pending提案）"""
+    try:
+        from backend.database.models import Proposal
+
+        # 查找所有contract_proposal_id为None的pending提案
+        invalid_proposals = db.query(Proposal).filter(
+            Proposal.contract_proposal_id.is_(None),
+            Proposal.status == 'pending'
+        ).all()
+
+        deleted_count = len(invalid_proposals)
+        deleted_ids = [p.id for p in invalid_proposals]
+
+        # 删除这些无效提案
+        for proposal in invalid_proposals:
+            db.delete(proposal)
+
+        db.commit()
+
+        return {
+            "success": True,
+            "data": {
+                "deleted_count": deleted_count,
+                "deleted_ids": deleted_ids
+            },
+            "message": f"Successfully cleaned up {deleted_count} invalid proposals"
+        }
+    except Exception as e:
+        logger.error(f"清理无效提案失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/network/nodes/available")
+async def get_available_nodes():
+    """获取可显示的隐藏节点列表"""
+    try:
+        web3_manager = system_service.web3_manager
+
+        # 获取当前隐藏的节点列表
+        hidden_nodes = web3_manager.get_hidden_nodes()
+
+        # 获取这些节点的详细信息
+        available_nodes = []
+        for node_role in hidden_nodes:
+            try:
+                node_info = web3_manager.get_account_info(node_role)
+                available_nodes.append({
+                    "id": node_role,
+                    "address": node_info["address"],
+                    "balance": node_info["balance_eth"],
+                    "type": "operator"
+                })
+            except Exception as e:
+                logger.warning(f"获取节点{node_role}信息失败: {e}")
+
+        return {
+            "success": True,
+            "data": {
+                "available_nodes": available_nodes,
+                "count": len(available_nodes)
+            },
+            "message": "可用隐藏节点列表获取成功"
+        }
+    except Exception as e:
+        logger.error(f"获取可用节点失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/network/nodes/show")
+async def show_network_node(request_data: dict):
+    """从隐藏池中显示一个operator节点"""
+    try:
+        from backend.config import HIDDEN_NODES
+
+        node_id = request_data.get("node_id")
+
+        if not node_id:
+            raise HTTPException(status_code=400, detail="node_id is required")
+
+        # 验证是否为operator节点
+        if not node_id.startswith("operator_"):
+            raise HTTPException(status_code=400, detail="只能显示operator节点")
+
+        # 验证节点是否在隐藏池中
+        if node_id not in HIDDEN_NODES:
+            raise HTTPException(status_code=400, detail=f"节点{node_id}不在隐藏池中")
+
+        web3_manager = system_service.web3_manager
+
+        # 显示节点
+        success = web3_manager.show_node(node_id)
+
+        if not success:
+            raise HTTPException(status_code=400, detail=f"显示节点{node_id}失败")
+
+        # 检查节点余额，如果为0则从treasury充值
+        node_info = web3_manager.get_account_info(node_id)
+        if node_info["balance_eth"] < 1.0:
+            logger.info(f"节点{node_id}余额不足，从treasury充值...")
+            transfer_amount = 100.0  # 充值100 ETH
+
+            # 从treasury转账
+            treasury_info = web3_manager.get_account_info('treasury')
+            if treasury_info['balance_eth'] >= transfer_amount:
+                result = web3_manager.send_reward('treasury', node_id, transfer_amount)
+                if result["success"]:
+                    logger.info(f"✅ 节点{node_id}充值成功: {transfer_amount} ETH")
+                    node_info = web3_manager.get_account_info(node_id)  # 更新余额
+                else:
+                    logger.warning(f"⚠️ 节点{node_id}充值失败: {result.get('error')}")
+
+        return {
+            "success": True,
+            "data": {
+                "node_id": node_id,
+                "address": node_info["address"],
+                "balance": node_info["balance_eth"],
+                "type": "operator"
+            },
+            "message": f"节点{node_id}显示成功"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"显示节点失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/network/nodes/hide")
+async def hide_network_node(request_data: dict):
+    """隐藏operator节点（不删除账户）"""
+    try:
+        from backend.config import HIDDEN_NODES
+
+        node_id = request_data.get("node_id")
+
+        if not node_id:
+            raise HTTPException(status_code=400, detail="node_id is required")
+
+        # 验证节点是否在隐藏池中（只能隐藏池中的节点可以被隐藏）
+        if node_id not in HIDDEN_NODES:
+            raise HTTPException(status_code=400, detail=f"核心节点{node_id}不能隐藏")
+
+        web3_manager = system_service.web3_manager
+
+        # 隐藏节点
+        success = web3_manager.hide_node(node_id)
+
+        if not success:
+            raise HTTPException(status_code=400, detail=f"隐藏节点{node_id}失败")
+
+        return {
+            "success": True,
+            "data": {
+                "node_id": node_id
+            },
+            "message": f"节点{node_id}已隐藏"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"隐藏节点失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/network/nodes/{node_id}/remove")

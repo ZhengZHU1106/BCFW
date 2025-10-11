@@ -9,8 +9,8 @@
         <button @click="refreshNetwork" class="btn btn-secondary">
           Refresh Network
         </button>
-        <button @click="showCreateNodeModal" class="btn btn-success">
-          Add Node
+        <button @click="showNodeSelectionModal" class="btn btn-success">
+          Show Hidden Node
         </button>
       </div>
     </div>
@@ -57,40 +57,34 @@
       @delete-node="handleDeleteNode"
     />
 
-    <!-- Create Node Modal -->
-    <div v-if="showCreateModal" class="modal-overlay" @click="closeCreateNodeModal">
+    <!-- Show Node Modal -->
+    <div v-if="showCreateModal" class="modal-overlay" @click="closeShowNodeModal">
       <div class="modal" @click.stop>
         <div class="modal-header">
-          <h3>Create New Node</h3>
-          <button @click="closeCreateNodeModal" class="btn-close">&times;</button>
+          <h3>Show Hidden Node</h3>
+          <button @click="closeShowNodeModal" class="btn-close">&times;</button>
         </div>
         <div class="modal-body">
-          <form @submit.prevent="createNode">
+          <form @submit.prevent="showNode">
             <div class="form-group">
-              <label for="node-type">Node Type:</label>
-              <select id="node-type" v-model="newNode.type" required>
-                <option value="">Select Type</option>
-                <option value="manager">Manager</option>
-                <option value="operator">Operator</option>
+              <label for="hidden-node-select">Select Hidden Operator Node:</label>
+              <select id="hidden-node-select" v-model="selectedHiddenNode" required>
+                <option value="">Select Node</option>
+                <option v-for="node in availableNodes" :key="node.id" :value="node.id">
+                  {{ node.id }} ({{ node.address.substring(0, 10) }}...) - {{ node.balance.toFixed(2) }} ETH
+                </option>
               </select>
             </div>
-            <div class="form-group">
-              <label for="node-name">Custom Name (optional):</label>
-              <input 
-                id="node-name" 
-                type="text" 
-                v-model="newNode.name" 
-                placeholder="e.g., test, backup, etc."
-                pattern="[a-zA-Z0-9_]+"
-                title="Only letters, numbers, and underscores allowed"
-              />
+            <div class="info-message">
+              <span class="info-icon">ℹ️</span>
+              <p>DevLeChain uses 10 pre-configured keystore accounts. "Show" makes a hidden operator node visible in the network visualization. Hidden nodes can be shown/hidden at any time.</p>
             </div>
             <div class="form-actions">
-              <button type="button" @click="closeCreateNodeModal" class="btn btn-secondary">
+              <button type="button" @click="closeShowNodeModal" class="btn btn-secondary">
                 Cancel
               </button>
-              <button type="submit" class="btn btn-success" :disabled="isCreatingNode">
-                {{ isCreatingNode ? 'Creating...' : 'Create Node' }}
+              <button type="submit" class="btn btn-success" :disabled="isShowingNode || !selectedHiddenNode">
+                {{ isShowingNode ? 'Showing...' : 'Show Node' }}
               </button>
             </div>
           </form>
@@ -98,32 +92,32 @@
       </div>
     </div>
 
-    <!-- Delete Confirmation Modal -->
+    <!-- Hide Confirmation Modal -->
     <div v-if="showDeleteModal" class="modal-overlay" @click="closeDeleteModal">
       <div class="modal" @click.stop>
         <div class="modal-header">
-          <h3>Delete Node</h3>
+          <h3>Hide Node</h3>
           <button @click="closeDeleteModal" class="btn-close">&times;</button>
         </div>
         <div class="modal-body">
           <div class="delete-warning">
-            <p><strong>⚠️ Warning:</strong> You are about to delete node <code>{{ nodeToDelete?.id }}</code>.</p>
+            <p><strong>ℹ️ Info:</strong> You are about to hide node <code>{{ nodeToDelete?.id }}</code>.</p>
             <p>This action will:</p>
             <ul>
-              <li>Transfer remaining balance back to Treasury</li>
-              <li>Remove the node from the active network</li>
-              <li>This action cannot be undone</li>
+              <li>Remove the node from the network visualization</li>
+              <li>Keep the account and balance intact</li>
+              <li>You can show it again at any time</li>
             </ul>
             <p v-if="nodeToDelete && nodeToDelete.balance > 0">
-              Current balance: <strong>{{ nodeToDelete.balance.toFixed(2) }} ETH</strong>
+              Current balance: <strong>{{ nodeToDelete.balance.toFixed(2) }} ETH</strong> (will be preserved)
             </p>
           </div>
           <div class="form-actions">
             <button @click="closeDeleteModal" class="btn btn-secondary">
               Cancel
             </button>
-            <button @click="confirmDeleteNode" class="btn btn-danger" :disabled="isDeletingNode">
-              {{ isDeletingNode ? 'Deleting...' : 'Delete Node' }}
+            <button @click="confirmDeleteNode" class="btn btn-warning" :disabled="isDeletingNode">
+              {{ isDeletingNode ? 'Hiding...' : 'Hide Node' }}
             </button>
           </div>
         </div>
@@ -173,12 +167,10 @@ const isLoading = ref(false)
 const showCreateModal = ref(false)
 const showDeleteModal = ref(false)
 const nodeToDelete = ref(null)
-const isCreatingNode = ref(false)
+const isShowingNode = ref(false)
 const isDeletingNode = ref(false)
-const newNode = ref({
-  type: '',
-  name: ''
-})
+const selectedHiddenNode = ref('')
+const availableNodes = ref([])
 
 // Network canvas reference
 const networkCanvas = ref(null)
@@ -360,70 +352,83 @@ const refreshNetwork = async () => {
 }
 
 // Node management methods
-const showCreateNodeModal = () => {
-  newNode.value = { type: '', name: '' }
+const loadAvailableNodes = async () => {
+  try {
+    const result = await networkAPI.getAvailableNodes()
+    if (result.success) {
+      availableNodes.value = result.data.available_nodes
+      console.log('Available hidden nodes:', availableNodes.value)
+    } else {
+      console.error('Failed to load available nodes:', result.error)
+      availableNodes.value = []
+    }
+  } catch (error) {
+    console.error('Error loading available nodes:', error)
+    availableNodes.value = []
+  }
+}
+
+const showNodeSelectionModal = async () => {
+  await loadAvailableNodes()
+  selectedHiddenNode.value = ''
   showCreateModal.value = true
 }
 
-const closeCreateNodeModal = () => {
+const closeShowNodeModal = () => {
   showCreateModal.value = false
-  newNode.value = { type: '', name: '' }
+  selectedHiddenNode.value = ''
+  availableNodes.value = []
 }
 
-const createNode = async () => {
-  console.log('🚀 createNode function called')
-  console.log('newNode.value:', newNode.value)
-  
-  if (!newNode.value.type) {
-    console.error('Please select a node type')
-    alert('Please select a node type')
+const showNode = async () => {
+  console.log('🚀 showNode function called')
+  console.log('selectedHiddenNode:', selectedHiddenNode.value)
+
+  if (!selectedHiddenNode.value) {
+    console.error('Please select a node to show')
+    alert('Please select a node to show')
     return
   }
 
-  console.log('Starting node creation...')
-  isCreatingNode.value = true
-  
+  console.log('Starting node show operation...')
+  isShowingNode.value = true
+
   try {
-    console.log('Calling networkAPI.createNode with:', {
-      type: newNode.value.type,
-      name: newNode.value.name
-    })
-    
-    const result = await networkAPI.createNode({
-      type: newNode.value.type,
-      name: newNode.value.name
-    })
-    
+    console.log('Calling networkAPI.showNode with:', selectedHiddenNode.value)
+
+    const result = await networkAPI.showNode(selectedHiddenNode.value)
+
     console.log('API Response:', result)
 
     if (result.success) {
-      console.log('✅ Node created successfully:', result.data)
-      closeCreateNodeModal()
+      console.log('✅ Node shown successfully:', result.data)
+      closeShowNodeModal()
       await loadNetworkTopology() // Refresh the network
       // Wait a bit for the UI to update
       await new Promise(resolve => setTimeout(resolve, 100))
-      const successMessage = `✅ Node ${result.data.node_id} created successfully with ${result.data.balance} ETH`
+      const successMessage = `✅ Node ${result.data.node_id} is now visible with ${result.data.balance.toFixed(2)} ETH`
       console.log(successMessage)
       alert(successMessage) // Show success alert
     } else {
-      const errorMessage = 'Failed to create node: ' + (result.error || 'Unknown error')
+      const errorMessage = 'Failed to show node: ' + (result.error || 'Unknown error')
       console.error(errorMessage)
       alert(errorMessage) // Show error alert
     }
   } catch (error) {
-    console.error('❌ Error creating node:', error)
-    alert(`Error creating node: ${error.message || error}`) // Show error alert
+    console.error('❌ Error showing node:', error)
+    alert(`Error showing node: ${error.message || error}`) // Show error alert
   } finally {
-    console.log('Finishing createNode, setting isCreatingNode to false')
-    isCreatingNode.value = false
+    console.log('Finishing showNode, setting isShowingNode to false')
+    isShowingNode.value = false
   }
 }
 
 const handleDeleteNode = (node) => {
-  // Check if it's a core node
-  const coreNodes = ['treasury', 'manager_0', 'manager_1', 'manager_2']
+  // Check if it's a core node (treasury, managers, operator_0, operator_1)
+  const coreNodes = ['treasury', 'manager_0', 'manager_1', 'manager_2', 'operator_0', 'operator_1']
   if (coreNodes.includes(node.id)) {
-    console.warn('Core nodes cannot be deleted')
+    alert('Core nodes cannot be hidden')
+    console.warn('Core nodes cannot be hidden')
     return
   }
 
@@ -442,21 +447,27 @@ const confirmDeleteNode = async () => {
 
   isDeletingNode.value = true
   try {
-    const result = await networkAPI.removeNode(nodeToDelete.value.id)
+    // Use hideNode instead of removeNode
+    const result = await networkAPI.hideNode(nodeToDelete.value.id)
 
     if (result.success) {
-      console.log('Node deleted successfully:', result.data)
-      const deletedNodeId = nodeToDelete.value.id
+      console.log('Node hidden successfully:', result.data)
+      const hiddenNodeId = nodeToDelete.value.id
       closeDeleteModal()
       await loadNetworkTopology() // Refresh the network
       // Wait a bit for the UI to update
       await new Promise(resolve => setTimeout(resolve, 100))
-      console.log(`✅ Node ${deletedNodeId} deleted successfully. Balance transferred to Treasury.`)
+      alert(`✅ Node ${hiddenNodeId} has been hidden`)
+      console.log(`✅ Node ${hiddenNodeId} hidden successfully.`)
     } else {
-      console.error('Failed to delete node: ' + (result.error || 'Unknown error'))
+      const errorMessage = 'Failed to hide node: ' + (result.error || 'Unknown error')
+      alert(errorMessage)
+      console.error(errorMessage)
     }
   } catch (error) {
-    console.error('Error deleting node:', error)
+    const errorMessage = `Error hiding node: ${error.message || error}`
+    alert(errorMessage)
+    console.error('Error hiding node:', error)
   } finally {
     isDeletingNode.value = false
   }
@@ -761,21 +772,21 @@ onMounted(() => {
 
 .delete-warning {
   padding: 1rem;
-  background: #fff3cd;
-  border: 1px solid #ffeaa7;
+  background: #e3f2fd;
+  border: 1px solid #90caf9;
   border-radius: 4px;
   margin-bottom: 1rem;
 }
 
 .delete-warning p {
   margin: 0 0 0.5rem 0;
-  color: #856404;
+  color: #1565c0;
 }
 
 .delete-warning ul {
   margin: 0.5rem 0;
   padding-left: 1.5rem;
-  color: #856404;
+  color: #1565c0;
 }
 
 .delete-warning code {
@@ -783,6 +794,29 @@ onMounted(() => {
   padding: 0.2rem 0.4rem;
   border-radius: 3px;
   font-family: monospace;
+}
+
+.info-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: #e3f2fd;
+  border: 1px solid #90caf9;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+  color: #1565c0;
+}
+
+.info-icon {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.info-message p {
+  margin: 0;
+  line-height: 1.4;
 }
 
 @media (max-width: 768px) {

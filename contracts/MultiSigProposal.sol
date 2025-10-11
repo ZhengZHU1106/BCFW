@@ -10,6 +10,7 @@ contract MultiSigProposal {
     // Events
     event ProposalCreated(uint256 indexed proposalId, address indexed creator, address target, uint256 amount);
     event ProposalSigned(uint256 indexed proposalId, address indexed signer);
+    event ProposalRejected(uint256 indexed proposalId, address indexed rejector);
     event ProposalExecuted(uint256 indexed proposalId, address indexed executor, address target, uint256 amount);
     event OwnerAdded(address indexed owner);
     event OwnerRemoved(address indexed owner);
@@ -50,6 +51,8 @@ contract MultiSigProposal {
         uint256 amount;
         bytes data;
         bool executed;
+        bool rejected;
+        address rejectedBy;
         uint256 signatureCount;
         mapping(address => bool) signatures;
         address creator;
@@ -86,6 +89,7 @@ contract MultiSigProposal {
     
     modifier notExecuted(uint256 proposalId) {
         require(!proposals[proposalId].executed, "Proposal already executed");
+        require(!proposals[proposalId].rejected, "Proposal already rejected");
         _;
     }
     
@@ -149,29 +153,48 @@ contract MultiSigProposal {
      * @dev Sign a proposal (only managers can sign)
      * @param proposalId ID of the proposal to sign
      */
-    function signProposal(uint256 proposalId) 
-        external 
-        onlyManager 
-        proposalExists(proposalId) 
-        notExecuted(proposalId) 
+    function signProposal(uint256 proposalId)
+        external
+        onlyManager
+        proposalExists(proposalId)
+        notExecuted(proposalId)
     {
         Proposal storage proposal = proposals[proposalId];
         require(!proposal.signatures[msg.sender], "Already signed");
-        
+
         proposal.signatures[msg.sender] = true;
         proposal.signatureCount++;
-        
+
         // Update contribution record
         _updateContribution(msg.sender, proposal.createdAt);
-        
+
         emit ProposalSigned(proposalId, msg.sender);
-        
+
         // Auto-execute if threshold is met
         if (proposal.signatureCount >= threshold) {
             _executeProposal(proposalId);
         }
     }
-    
+
+    /**
+     * @dev Reject a proposal (1-vote veto by any manager)
+     * @param proposalId ID of the proposal to reject
+     */
+    function rejectProposal(uint256 proposalId)
+        external
+        onlyManager
+        proposalExists(proposalId)
+        notExecuted(proposalId)
+    {
+        Proposal storage proposal = proposals[proposalId];
+
+        // Mark proposal as rejected
+        proposal.rejected = true;
+        proposal.rejectedBy = msg.sender;
+
+        emit ProposalRejected(proposalId, msg.sender);
+    }
+
     /**
      * @dev Execute a proposal (internal function)
      * @param proposalId ID of the proposal to execute
@@ -207,23 +230,27 @@ contract MultiSigProposal {
      * @return target Target address
      * @return amount Amount in wei
      * @return executed Whether executed
+     * @return rejected Whether rejected
+     * @return rejectedBy Address that rejected the proposal
      * @return signatureCount Number of signatures
      * @return creator Proposal creator
      * @return createdAt Timestamp of creation
      */
-    function getProposal(uint256 proposalId) 
-        external 
-        view 
+    function getProposal(uint256 proposalId)
+        external
+        view
         proposalExists(proposalId)
         returns (
             uint256 id,
             address target,
             uint256 amount,
             bool executed,
+            bool rejected,
+            address rejectedBy,
             uint256 signatureCount,
             address creator,
             uint256 createdAt
-        ) 
+        )
     {
         Proposal storage proposal = proposals[proposalId];
         return (
@@ -231,6 +258,8 @@ contract MultiSigProposal {
             proposal.target,
             proposal.amount,
             proposal.executed,
+            proposal.rejected,
+            proposal.rejectedBy,
             proposal.signatureCount,
             proposal.creator,
             proposal.createdAt

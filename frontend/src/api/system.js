@@ -67,5 +67,12 @@ export const systemAPI = {
     })
   },
 
+  withdrawFromRewardPool(toRole, amount) {
+    return apiClient.post('/reward-pool/withdraw', {
+      to_role: toRole,
+      amount: amount
+    })
+  },
+
   // distributeContributionRewards API已移除 - 现在使用自动分配机制
 }

@@ -72,7 +72,16 @@
         </button>
       </div>
       
-      <div v-if="threats.length === 0" class="no-threats">
+      <div v-if="isLoadingThreats && threats.length === 0" class="loading-threats">
+        <p>⏳ Loading threat detections...</p>
+      </div>
+
+      <div v-else-if="threatsLoadError && threats.length === 0" class="error-threats">
+        <p>⚠️ Failed to load threats: {{ threatsLoadError }}</p>
+        <button @click="refreshThreats" class="btn btn-secondary btn-sm">Retry</button>
+      </div>
+
+      <div v-else-if="threats.length === 0" class="no-threats">
         <p>No threat detection records</p>
       </div>
       
@@ -166,6 +175,8 @@ const latestThreat = ref(null)
 const isSimulating = ref(false)
 const isSimulatingMedium = ref(false)
 const isDemoMode = ref(false)
+const isLoadingThreats = ref(false)
+const threatsLoadError = ref(null)
 
 // Threat statistics
 const threatStats = ref({
@@ -234,6 +245,13 @@ const simulateAttack = async () => {
   if (isSimulating.value) return
 
   isSimulating.value = true
+
+  // 暂停自动刷新
+  if (refreshTimer) {
+    clearInterval(refreshTimer)
+    refreshTimer = null
+  }
+
   try {
     const result = await systemAPI.simulateAttack()
 
@@ -262,6 +280,9 @@ const simulateAttack = async () => {
     alert('Attack simulation failed. Please check backend service.')
   } finally {
     isSimulating.value = false
+
+    // 恢复自动刷新
+    refreshTimer = setInterval(refreshThreats, 10000)
   }
 }
 
@@ -270,6 +291,13 @@ const simulateMediumThreat = async () => {
   if (isSimulatingMedium.value) return
 
   isSimulatingMedium.value = true
+
+  // 暂停自动刷新
+  if (refreshTimer) {
+    clearInterval(refreshTimer)
+    refreshTimer = null
+  }
+
   try {
     const result = await systemAPI.simulateMediumThreat()
 
@@ -306,6 +334,9 @@ const simulateMediumThreat = async () => {
     alert('Medium threat simulation failed. Please check backend service.')
   } finally {
     isSimulatingMedium.value = false
+
+    // 恢复自动刷新
+    refreshTimer = setInterval(refreshThreats, 10000)
   }
 }
 
@@ -348,6 +379,15 @@ const mergeThreats = (currentThreats, newThreats) => {
 }
 
 const refreshThreats = async () => {
+  // 防止重复请求
+  if (isLoadingThreats.value) {
+    console.log('Refresh already in progress, skipping...')
+    return
+  }
+
+  isLoadingThreats.value = true
+  threatsLoadError.value = null
+
   try {
     const result = await systemAPI.getDetectionLogs()
     if (result.success) {
@@ -358,9 +398,27 @@ const refreshThreats = async () => {
 
       // Update statistics
       updateThreatStats()
+    } else {
+      // API返回失败，但保留现有数据
+      console.warn('API returned failure, keeping existing data:', result)
+      threatsLoadError.value = 'Failed to load threats'
     }
   } catch (error) {
+    // 网络错误或超时，保留现有数据
     console.error('Failed to refresh threat list:', error)
+    threatsLoadError.value = error.message || 'Network error'
+
+    // 如果是首次加载失败，尝试重试一次
+    if (threats.value.length === 0) {
+      console.log('First load failed, retrying in 2s...')
+      setTimeout(() => {
+        isLoadingThreats.value = false
+        refreshThreats()
+      }, 2000)
+      return
+    }
+  } finally {
+    isLoadingThreats.value = false
   }
 }
 
@@ -412,18 +470,24 @@ const handleCreateProposal = async (threat) => {
 // Create proposal
 const createProposal = async (threat) => {
   if (threat.creating) return
-  
+
+  // 暂停自动刷新
+  if (refreshTimer) {
+    clearInterval(refreshTimer)
+    refreshTimer = null
+  }
+
   threat.creating = true
   try {
     // Get current operator role from localStorage
     const operatorRole = localStorage.getItem('userRole') || 'operator_0'
-    
+
     const result = await systemAPI.createProposal({
       detection_id: threat.id,
       action: 'block',
       operator_role: operatorRole  // Pass operator role for Phase 8 role separation
     })
-    
+
     if (result.success) {
       alert('Proposal created successfully!')
       threat.status = 'proposal_created'
@@ -435,6 +499,9 @@ const createProposal = async (threat) => {
     alert('Failed to create proposal. Please try again later.')
   } finally {
     threat.creating = false
+
+    // 恢复自动刷新
+    refreshTimer = setInterval(refreshThreats, 10000)
   }
 }
 
@@ -739,15 +806,33 @@ onUnmounted(() => {
   color: #e74c3c;
 }
 
-.no-threats {
+.no-threats, .loading-threats, .error-threats {
   text-align: center;
   padding: 3rem;
   color: #7f8c8d;
 }
 
-.no-threats p {
+.no-threats p, .loading-threats p {
   margin: 0;
   font-size: 1.1rem;
+}
+
+.loading-threats p {
+  color: #3498db;
+  font-weight: 500;
+}
+
+.error-threats {
+  color: #e74c3c;
+}
+
+.error-threats p {
+  margin-bottom: 1rem;
+  font-size: 1.1rem;
+}
+
+.error-threats .btn {
+  margin-top: 0.5rem;
 }
 
 /* Confidence info button */

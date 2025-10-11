@@ -150,12 +150,12 @@
       
       <div class="modal-footer">
         <div class="footer-left">
-          <button 
-            v-if="canDeleteNode" 
-            @click="handleDeleteClick" 
-            class="btn btn-danger"
+          <button
+            v-if="canHideNode"
+            @click="handleDeleteClick"
+            class="btn btn-warning"
           >
-            Delete Node
+            Hide Node
           </button>
         </div>
         <div class="footer-right">
@@ -275,9 +275,9 @@ const getNodeConnections = () => {
   }
 }
 
-// Check if node can be deleted (core nodes cannot be deleted)
-const canDeleteNode = computed(() => {
-  const coreNodes = ['treasury', 'manager_0', 'manager_1', 'manager_2']
+// Check if node can be hidden (core nodes cannot be hidden)
+const canHideNode = computed(() => {
+  const coreNodes = ['treasury', 'manager_0', 'manager_1', 'manager_2', 'operator_0', 'operator_1']
   return props.node?.id && !coreNodes.includes(props.node.id)
 })
 
@@ -626,6 +626,15 @@ const handleDeleteClick = () => {
 
 .btn-danger:hover {
   background: #c82333;
+}
+
+.btn-warning {
+  background: #ffc107;
+  color: #212529;
+}
+
+.btn-warning:hover {
+  background: #e0a800;
 }
 
 @media (max-width: 768px) {

@@ -320,10 +320,12 @@ const canSign = (managerIndex) => {
 
 const canReject = (managerIndex) => {
   const managerRole = `manager_${managerIndex}`
+  const signer = signers.value[managerIndex]
 
   return props.currentRole === managerRole &&
          props.proposal.status === 'pending' &&
          !props.proposal.rejected_by &&
+         !signer?.signed &&  // Don't show reject button if manager has already signed
          !signing.value && !rejecting.value
 }
 

@@ -4,24 +4,26 @@ Web3连接和账户管理模块
 
 from web3 import Web3
 from eth_account import Account
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 import logging
 import json
 import os
-from ..config import GANACHE_CONFIG, INCENTIVE_CONFIG
+from ..config import GANACHE_CONFIG, INCENTIVE_CONFIG, HIDDEN_NODES
 
 logger = logging.getLogger(__name__)
 
 class Web3Manager:
     """Web3连接和账户管理器"""
-    
+
     def __init__(self):
         self.w3: Optional[Web3] = None
         self.accounts: Dict[str, str] = {}  # role -> address
         self.private_keys: Dict[str, str] = {}  # role -> private_key
         self.multisig_contract = None
+        self.visible_nodes: Set[str] = set()  # 当前可见的节点集合
         self._initialize_connection()
         self._setup_accounts()
+        self._initialize_visible_nodes()
         self._initialize_multisig_contract()
     
     def _initialize_connection(self):
@@ -128,7 +130,58 @@ class Web3Manager:
             balance_eth = self.w3.from_wei(balance, 'ether')
 
             logger.info(f"👛 {role}: {account.address} (余额: {balance_eth} ETH)")
-    
+
+    def _initialize_visible_nodes(self):
+        """初始化可见节点集合 - 默认显示所有非隐藏节点"""
+        try:
+            for role in self.accounts.keys():
+                # 默认显示所有非隐藏节点
+                if role not in HIDDEN_NODES:
+                    self.visible_nodes.add(role)
+
+            logger.info(f"👁️ 初始可见节点: {self.visible_nodes}")
+            logger.info(f"🙈 隐藏节点池: {HIDDEN_NODES}")
+
+        except Exception as e:
+            logger.error(f"❌ 初始化可见节点失败: {e}")
+
+    def show_node(self, node_role: str) -> bool:
+        """显示一个隐藏的节点"""
+        if node_role not in self.accounts:
+            logger.warning(f"⚠️ 节点{node_role}不存在")
+            return False
+
+        if node_role not in HIDDEN_NODES:
+            logger.warning(f"⚠️ 节点{node_role}不在隐藏池中")
+            return False
+
+        self.visible_nodes.add(node_role)
+        logger.info(f"👁️ 显示节点: {node_role}")
+        return True
+
+    def hide_node(self, node_role: str) -> bool:
+        """隐藏一个operator节点"""
+        if node_role not in self.accounts:
+            logger.warning(f"⚠️ 节点{node_role}不存在")
+            return False
+
+        # 不能隐藏核心节点
+        if node_role not in HIDDEN_NODES:
+            logger.warning(f"⚠️ 核心节点{node_role}不能隐藏")
+            return False
+
+        self.visible_nodes.discard(node_role)
+        logger.info(f"🙈 隐藏节点: {node_role}")
+        return True
+
+    def get_hidden_nodes(self) -> List[str]:
+        """获取当前隐藏的节点列表"""
+        return [node for node in HIDDEN_NODES if node not in self.visible_nodes]
+
+    def get_visible_nodes(self) -> List[str]:
+        """获取当前可见的节点列表"""
+        return list(self.visible_nodes)
+
     def get_account_info(self, role: str) -> Dict:
         """获取账户信息"""
         if role not in self.accounts:
@@ -145,10 +198,17 @@ class Web3Manager:
             "nonce": self.w3.eth.get_transaction_count(address)
         }
     
-    def get_all_accounts_info(self) -> List[Dict]:
-        """获取所有账户信息"""
+    def get_all_accounts_info(self, include_hidden: bool = False) -> List[Dict]:
+        """获取所有账户信息
+
+        Args:
+            include_hidden: 是否包含隐藏节点，默认False只返回可见节点
+        """
         accounts_info = []
         for role in self.accounts.keys():
+            # 如果include_hidden为False，只返回可见节点
+            if not include_hidden and role not in self.visible_nodes:
+                continue
             accounts_info.append(self.get_account_info(role))
         return accounts_info
     
@@ -282,17 +342,35 @@ class Web3Manager:
                 "success": False,
                 "error": "MultiSig contract not initialized"
             }
-        
+
         try:
             return self.multisig_contract.sign_proposal(proposal_id, signer_role)
-            
+
         except Exception as e:
             logger.error(f"❌ Failed to sign multisig proposal: {e}")
             return {
                 "success": False,
                 "error": str(e)
             }
-    
+
+    def reject_multisig_proposal(self, proposal_id: int, rejector_role: str) -> Dict:
+        """拒绝多签名提案（1-vote veto）"""
+        if not self.multisig_contract:
+            return {
+                "success": False,
+                "error": "MultiSig contract not initialized"
+            }
+
+        try:
+            return self.multisig_contract.reject_proposal(proposal_id, rejector_role)
+
+        except Exception as e:
+            logger.error(f"❌ Failed to reject multisig proposal: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
     def get_multisig_proposal(self, proposal_id: int) -> Dict:
         """获取多签名提案详情"""
         if not self.multisig_contract:
@@ -365,17 +443,35 @@ class Web3Manager:
                 "success": False,
                 "error": "MultiSig contract not initialized"
             }
-        
+
         try:
             return self.multisig_contract.deposit_to_reward_pool(from_role, amount_eth)
-            
+
         except Exception as e:
             logger.error(f"❌ Failed to deposit to reward pool: {e}")
             return {
                 "success": False,
                 "error": str(e)
             }
-    
+
+    def withdraw_from_reward_pool(self, to_role: str, amount_eth: float) -> Dict:
+        """从奖金池提取ETH"""
+        if not self.multisig_contract:
+            return {
+                "success": False,
+                "error": "MultiSig contract not initialized"
+            }
+
+        try:
+            return self.multisig_contract.withdraw_from_reward_pool(to_role, amount_eth)
+
+        except Exception as e:
+            logger.error(f"❌ Failed to withdraw from reward pool: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
     def get_reward_pool_info(self) -> Dict:
         """获取奖金池信息"""
         if not self.multisig_contract:

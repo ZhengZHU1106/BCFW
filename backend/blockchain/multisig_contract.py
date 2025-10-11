@@ -193,13 +193,80 @@ class MultiSigContract:
                 "signer_role": signer_role
             }
 
+    def reject_proposal(self, proposal_id: int, rejector_role: str) -> Dict[str, Any]:
+        """Reject proposal on smart contract (1-vote veto)"""
+        try:
+            # Check rejector authorization
+            if not self.is_authorized_signer(rejector_role):
+                raise ValueError(f"Role {rejector_role} is not authorized to reject proposals")
+
+            # Get rejector account
+            rejector_address = self.web3_manager.accounts.get(rejector_role)
+            rejector_key = self.web3_manager.private_keys.get(rejector_role)
+
+            # Build transaction
+            nonce = self.w3.eth.get_transaction_count(rejector_address)
+            gas_price = self.w3.eth.gas_price
+
+            txn = self.contract.functions.rejectProposal(proposal_id).build_transaction({
+                'from': rejector_address,
+                'nonce': nonce,
+                'gas': 200000,
+                'gasPrice': gas_price,
+                'chainId': self.w3.eth.chain_id
+            })
+
+            # Sign and send
+            signed_txn = self.w3.eth.account.sign_transaction(txn, rejector_key)
+            tx_hash = self.w3.eth.send_raw_transaction(signed_txn.raw_transaction)
+
+            # Wait for receipt
+            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+
+            if receipt.status == 1:
+                # Get updated proposal info
+                proposal = self.get_proposal(proposal_id)
+
+                logger.info(f"❌ Proposal {proposal_id} rejected by {rejector_role} on-chain")
+
+                return {
+                    "success": True,
+                    "proposal_id": proposal_id,
+                    "rejector": rejector_address,
+                    "rejector_role": rejector_role,
+                    "rejected": proposal["rejected"] if proposal else True,
+                    "rejected_by": proposal["rejected_by"] if proposal else rejector_address,
+                    "tx_hash": tx_hash.hex(),
+                    "block_number": receipt.blockNumber,
+                    "rejected_at": datetime.now().isoformat()
+                }
+            else:
+                raise Exception(f"Transaction failed with status {receipt.status}")
+
+        except ContractLogicError as e:
+            logger.error(f"❌ Contract logic error: {e}")
+            return {
+                "success": False,
+                "error": f"Smart contract rejected: {str(e)}",
+                "proposal_id": proposal_id,
+                "rejector_role": rejector_role
+            }
+        except Exception as e:
+            logger.error(f"❌ Reject proposal failed: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "proposal_id": proposal_id,
+                "rejector_role": rejector_role
+            }
+
     def get_proposal(self, proposal_id: int) -> Optional[Dict[str, Any]]:
         """Get proposal from smart contract"""
         try:
             # Call getProposal function
             result = self.contract.functions.getProposal(proposal_id).call()
 
-            # Parse result tuple: (id, target, amount, executed, signatureCount, creator, createdAt)
+            # Parse result tuple: (id, target, amount, executed, rejected, rejectedBy, signatureCount, creator, createdAt)
             # Check if result is valid (proposal ID >= 0 is valid)
             if result and result[1] != '0x0000000000000000000000000000000000000000':  # Check target address
                 return {
@@ -208,9 +275,11 @@ class MultiSigContract:
                     "amount": self.w3.from_wei(result[2], 'ether'),
                     "amount_wei": result[2],
                     "executed": result[3],
-                    "signature_count": result[4],
-                    "creator": result[5],
-                    "created_at": datetime.fromtimestamp(result[6]).isoformat() if result[6] > 0 else None,
+                    "rejected": result[4],
+                    "rejected_by": result[5] if result[5] != '0x0000000000000000000000000000000000000000' else None,
+                    "signature_count": result[6],
+                    "creator": result[7],
+                    "created_at": datetime.fromtimestamp(result[8]).isoformat() if result[8] > 0 else None,
                     "contract_address": self.contract_address
                 }
             else:
@@ -323,6 +392,65 @@ class MultiSigContract:
 
         except Exception as e:
             logger.error(f"❌ Deposit to reward pool failed: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    def withdraw_from_reward_pool(self, to_role: str, amount_eth: float) -> Dict[str, Any]:
+        """Withdraw ETH from reward pool - using treasury as intermediary"""
+        try:
+            # Get reward pool current balance first
+            pool_info = self.get_reward_pool_info()
+            current_balance = float(pool_info.get("balance", 0))  # Convert to float
+
+            if current_balance < amount_eth:
+                raise ValueError(f"Insufficient balance in reward pool. Available: {current_balance} ETH")
+
+            # Use treasury account to send ETH from reward pool
+            treasury_address = self.web3_manager.accounts.get("treasury")
+            treasury_key = self.web3_manager.private_keys.get("treasury")
+            recipient_address = self.web3_manager.accounts.get(to_role)
+
+            amount_wei = self.w3.to_wei(amount_eth, 'ether')
+
+            # Build transaction
+            nonce = self.w3.eth.get_transaction_count(treasury_address)
+            gas_price = self.w3.eth.gas_price
+
+            transaction = {
+                'to': recipient_address,
+                'value': amount_wei,
+                'gas': 21000,
+                'gasPrice': gas_price,
+                'nonce': nonce,
+                'chainId': self.w3.eth.chain_id
+            }
+
+            # Sign and send
+            signed_txn = self.w3.eth.account.sign_transaction(transaction, treasury_key)
+            tx_hash = self.w3.eth.send_raw_transaction(signed_txn.raw_transaction)
+
+            # Wait for receipt
+            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+
+            if receipt.status == 1:
+                logger.info(f"💸 Withdrew {amount_eth} ETH from reward pool to {to_role}")
+
+                return {
+                    "success": True,
+                    "recipient_role": to_role,
+                    "amount": amount_eth,
+                    "new_balance": current_balance - amount_eth,  # Approximate
+                    "tx_hash": tx_hash.hex(),
+                    "block_number": receipt.blockNumber,
+                    "withdrawn_at": datetime.now().isoformat()
+                }
+            else:
+                raise Exception(f"Transaction failed with status {receipt.status}")
+
+        except Exception as e:
+            logger.error(f"❌ Withdraw from reward pool failed: {e}")
             return {
                 "success": False,
                 "error": str(e)
