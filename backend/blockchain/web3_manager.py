@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Set
 import logging
 import json
 import os
-from ..config import GANACHE_CONFIG, INCENTIVE_CONFIG, HIDDEN_NODES
+from ..config import DEVLECHAIN_CONFIG, INCENTIVE_CONFIG, HIDDEN_NODES
 
 logger = logging.getLogger(__name__)
 
@@ -29,15 +29,15 @@ class Web3Manager:
     def _initialize_connection(self):
         """初始化Web3连接"""
         try:
-            self.w3 = Web3(Web3.HTTPProvider(GANACHE_CONFIG['rpc_url']))
-            
+            self.w3 = Web3(Web3.HTTPProvider(DEVLECHAIN_CONFIG['rpc_url']))
+
             if not self.w3.is_connected():
-                raise ConnectionError(f"无法连接到Ganache: {GANACHE_CONFIG['rpc_url']}")
-            
-            logger.info(f"✅ Web3连接成功: {GANACHE_CONFIG['rpc_url']}")
+                raise ConnectionError(f"无法连接到DevLeChain: {DEVLECHAIN_CONFIG['rpc_url']}")
+
+            logger.info(f"✅ Web3连接成功: {DEVLECHAIN_CONFIG['rpc_url']}")
             logger.info(f"🔗 网络ID: {self.w3.eth.chain_id}")
             logger.info(f"📦 当前区块: {self.w3.eth.block_number}")
-            
+
         except Exception as e:
             logger.error(f"❌ Web3连接失败: {e}")
             raise
@@ -45,9 +45,9 @@ class Web3Manager:
     def _setup_accounts(self):
         """从DevLeChain keystore加载账户"""
         try:
-            keystore_dir = GANACHE_CONFIG.get('keystore_dir')
-            password = GANACHE_CONFIG.get('password')
-            accounts_config = GANACHE_CONFIG['accounts']
+            keystore_dir = DEVLECHAIN_CONFIG.get('keystore_dir')
+            password = DEVLECHAIN_CONFIG.get('password')
+            accounts_config = DEVLECHAIN_CONFIG['accounts']
 
             # 检查是否是新的DevLeChain配置(地址而非索引)
             first_account_value = list(accounts_config.values())[0]
@@ -58,8 +58,8 @@ class Web3Manager:
                 logger.info("🔑 从DevLeChain keystore加载账户...")
                 self._load_from_keystore(keystore_dir, password, accounts_config)
             else:
-                # Ganache模式：使用助记词(向后兼容)
-                logger.info("🔑 使用助记词派生账户(Ganache模式)...")
+                # Legacy模式：使用助记词(向后兼容，已弃用)
+                logger.info("🔑 使用助记词派生账户(Legacy模式-向后兼容)...")
                 self._load_from_mnemonic()
 
             logger.info("✅ 账户设置完成")
@@ -111,11 +111,11 @@ class Web3Manager:
                 raise
 
     def _load_from_mnemonic(self):
-        """使用助记词派生账户(Ganache模式-向后兼容)"""
+        """使用助记词派生账户(Legacy模式-向后兼容，已弃用)"""
         Account.enable_unaudited_hdwallet_features()
 
-        mnemonic = GANACHE_CONFIG.get('mnemonic', '')
-        account_mapping = GANACHE_CONFIG['accounts']
+        mnemonic = DEVLECHAIN_CONFIG.get('mnemonic', '')
+        account_mapping = DEVLECHAIN_CONFIG['accounts']
 
         for role, index in account_mapping.items():
             account = Account.from_mnemonic(
@@ -223,7 +223,7 @@ class Web3Manager:
             "block_number": self.w3.eth.block_number,
             "gas_price": self.w3.eth.gas_price,
             "is_connected": self.w3.is_connected(),
-            "rpc_url": GANACHE_CONFIG['rpc_url']
+            "rpc_url": DEVLECHAIN_CONFIG['rpc_url']
         }
     
     def send_reward(self, from_role: str, to_role: str, amount_eth: float = None) -> Dict:

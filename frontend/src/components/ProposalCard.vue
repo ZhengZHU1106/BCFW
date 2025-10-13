@@ -171,7 +171,8 @@
 </template>
 
 <script setup>
-import { ref, computed, toRefs, watchEffect } from 'vue'
+import { ref, computed, toRefs, watchEffect, onMounted } from 'vue'
+import { systemAPI } from '@/api/system'
 
 const props = defineProps({
   proposal: {
@@ -189,6 +190,14 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['sign', 'refresh'])
+
+// Store manager info from backend
+const managerAccounts = ref([
+  // Fallback to legacy addresses if API fails
+  { name: 'Manager 0', address: '0x69F652A7392F550F60775d5EDb67f3320764cFa6', id: 'manager_0' },
+  { name: 'Manager 1', address: '0xB524a6B6DA26d9f7eFF56CEF6093e79efe22ccc7', id: 'manager_1' },
+  { name: 'Manager 2', address: '0x2DF346b30BaBf5f9b4F50D3CaA6a766C29e355bc', id: 'manager_2' }
+])
 
 // 状态
 const signing = ref(false)
@@ -252,17 +261,37 @@ const signers = computed(() => {
   const proposalId = props.proposal.id
   const signatures = props.proposal.signed_by || []
 
-  // 静态manager信息，避免每次都创建新对象
-  const managerInfo = [
-    { name: 'Manager 0', address: '0x69F652A7392F550F60775d5EDb67f3320764cFa6', id: 'manager_0' },
-    { name: 'Manager 1', address: '0xB524a6B6DA26d9f7eFF56CEF6093e79efe22ccc7', id: 'manager_1' },
-    { name: 'Manager 2', address: '0x2DF346b30BaBf5f9b4F50D3CaA6a766C29e355bc', id: 'manager_2' }
-  ]
-
-  return managerInfo.map(manager => ({
+  // 使用从后端加载的manager信息（支持动态地址）
+  return managerAccounts.value.map(manager => ({
     ...manager,
     signed: signatures.includes(manager.id)
   }))
+})
+
+// Load manager accounts from backend on component mount
+onMounted(async () => {
+  try {
+    const response = await systemAPI.getSystemStatus()
+    if (response.success && response.data.accounts) {
+      // Extract manager accounts from system status
+      const managers = response.data.accounts
+        .filter(acc => acc.role.startsWith('manager_'))
+        .sort((a, b) => a.role.localeCompare(b.role))
+        .map((acc, index) => ({
+          name: `Manager ${index}`,
+          address: acc.address,
+          id: acc.role
+        }))
+
+      if (managers.length > 0) {
+        managerAccounts.value = managers
+        console.log('✅ Loaded manager accounts from DevLeChain:', managers)
+      }
+    }
+  } catch (error) {
+    console.warn('⚠️ Failed to load manager accounts, using fallback:', error)
+    // Keep using fallback addresses defined in ref initialization
+  }
 })
 
 const finalSignerReward = computed(() => {
@@ -418,6 +447,32 @@ const formatTime = (timestamp) => {
 const formatAddress = (address) => {
   return `${address.slice(0, 6)}...${address.slice(-4)}`
 }
+
+// Load manager accounts from backend on component mount
+onMounted(async () => {
+  try {
+    const response = await systemAPI.getSystemStatus()
+    if (response.success && response.data.accounts) {
+      // Extract manager accounts from system status
+      const managers = response.data.accounts
+        .filter(acc => acc.role.startsWith('manager_'))
+        .sort((a, b) => a.role.localeCompare(b.role))
+        .map((acc, index) => ({
+          name: `Manager ${index}`,
+          address: acc.address,
+          id: acc.role
+        }))
+
+      if (managers.length > 0) {
+        managerAccounts.value = managers
+        console.log('✅ Loaded manager accounts from DevLeChain:', managers)
+      }
+    }
+  } catch (error) {
+    console.warn('⚠️ Failed to load manager accounts, using fallback:', error)
+    // Keep using fallback addresses defined in ref initialization
+  }
+})
 </script>
 
 <style scoped>

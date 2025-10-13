@@ -37,13 +37,12 @@
 
     <!-- Network Canvas -->
     <div class="network-container">
-      <NetworkCanvas 
+      <NetworkCanvas
         ref="networkCanvas"
-        :nodes="nodes" 
+        :nodes="nodes"
         layout="star"
         :attack-flow="attackFlowSteps"
         @node-click="showNodeDetails"
-        @layout-updated="onLayoutUpdated"
       />
     </div>
 

@@ -41,8 +41,9 @@ DEVLECHAIN_CONFIG = {
 # 隐藏节点配置 - 默认隐藏的operator账户
 HIDDEN_NODES = ["operator_2", "operator_3", "operator_4", "operator_5"]
 
-# 向后兼容：使用DEVLECHAIN_CONFIG作为主配置
-GANACHE_CONFIG = DEVLECHAIN_CONFIG  # 使用DevLeChain配置
+# 向后兼容 - 已弃用，请使用DEVLECHAIN_CONFIG
+# ⚠️ DEPRECATED: GANACHE_CONFIG is deprecated, use DEVLECHAIN_CONFIG instead
+GANACHE_CONFIG = DEVLECHAIN_CONFIG  # Legacy alias for backward compatibility
 
 # AI 模型配置
 AI_MODEL_CONFIG = {

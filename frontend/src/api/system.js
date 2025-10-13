@@ -6,6 +6,11 @@ export const systemAPI = {
     return apiClient.get('/system/status')
   },
 
+  // Alias for backward compatibility (used by ProposalCard.vue)
+  getSystemStatus() {
+    return this.getStatus()
+  },
+
   // 模拟攻击
   simulateAttack() {
     return apiClient.post('/attack/simulate')

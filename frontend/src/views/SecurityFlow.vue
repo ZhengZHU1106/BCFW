@@ -246,7 +246,7 @@ const loadSystemStats = async () => {
       highConfidence: threats.filter(t => t.confidence > 0.8).length,
       proposalsCreated: allProposals.length,
       proposalsApproved: (proposals.approved || []).length,
-      blockHeight: systemInfo.block_height || 0,
+      blockHeight: systemInfo.network?.block_number || 0,
       auditRecords: threats.length + allProposals.length // Simple calculation
     }
   } catch (error) {
@@ -451,7 +451,7 @@ const simulateFullFlow = async () => {
       metadata: {
         'Threat Detection': 'Logged',
         'Proposal Created': proposalId ? `#${proposalId}` : 'Demo',
-        'Blockchain': 'Ganache Local Network'
+        'Blockchain': 'DevLeChain Private Network'
       }
     }
     activityStatusText.value = 'Audit Complete'
@@ -600,7 +600,7 @@ const updateStageInfo = (stageIndex) => {
         title: stage.title,
         description: 'All security actions are permanently recorded on blockchain for complete transparency.',
         metadata: {
-          'Blockchain': 'Ganache Local Network',
+          'Blockchain': 'DevLeChain Private Network',
           'Smart Contract': 'MultiSigProposal.sol',
           'Immutability': 'Tamper-proof records',
           'Accessibility': 'Public verification'

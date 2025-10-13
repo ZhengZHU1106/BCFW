@@ -9,7 +9,7 @@ const apiClient = axios.create({
   }
 })
 
-// 请求去重：追踪pending请求
+// 请求去重：追踪pending请求的Promise
 const pendingRequests = new Map()
 
 // 生成请求key
@@ -18,51 +18,42 @@ const generateRequestKey = (config) => {
   return [method, url, JSON.stringify(params), JSON.stringify(data)].join('&')
 }
 
-// 请求拦截器
-apiClient.interceptors.request.use(
-  config => {
-    const requestKey = generateRequestKey(config)
+// 包装axios请求以支持去重
+const originalRequest = apiClient.request.bind(apiClient)
+apiClient.request = function(config) {
+  const requestKey = generateRequestKey(config)
 
-    // 检查是否有相同的pending请求
-    if (pendingRequests.has(requestKey)) {
-      console.log(`Request already pending: ${config.url}`)
-      // 返回现有的pending promise
-      return pendingRequests.get(requestKey)
-    }
+  // 如果有相同的pending请求，返回现有Promise
+  if (pendingRequests.has(requestKey)) {
+    console.log(`Request already pending: ${config.url}, reusing existing request`)
+    return pendingRequests.get(requestKey)
+  }
 
-    // 创建cancel token
-    const cancelToken = axios.CancelToken.source()
-    config.cancelToken = cancelToken.token
-
-    // 保存请求
-    pendingRequests.set(requestKey, {
-      cancel: cancelToken.cancel,
-      timestamp: Date.now()
+  // 创建新的请求Promise
+  const requestPromise = originalRequest(config)
+    .then(response => {
+      // 请求成功，清理pending记录
+      pendingRequests.delete(requestKey)
+      return response
+    })
+    .catch(error => {
+      // 请求失败，清理pending记录
+      pendingRequests.delete(requestKey)
+      throw error
     })
 
-    return config
-  },
-  error => {
-    return Promise.reject(error)
-  }
-)
+  // 保存Promise供后续重复请求使用
+  pendingRequests.set(requestKey, requestPromise)
 
-// 响应拦截器
+  return requestPromise
+}
+
+// 响应拦截器 - 只负责数据转换
 apiClient.interceptors.response.use(
   response => {
-    // 移除已完成的请求
-    const requestKey = generateRequestKey(response.config)
-    pendingRequests.delete(requestKey)
-
     return response.data
   },
   error => {
-    // 移除失败的请求
-    if (error.config) {
-      const requestKey = generateRequestKey(error.config)
-      pendingRequests.delete(requestKey)
-    }
-
     console.error('API Error:', error)
     return Promise.reject(error)
   }
@@ -72,12 +63,12 @@ apiClient.interceptors.response.use(
 setInterval(() => {
   const now = Date.now()
   const timeout = 60000 // 60秒
-  for (const [key, value] of pendingRequests.entries()) {
-    if (now - value.timestamp > timeout) {
-      console.warn(`Cleaning up stale request: ${key}`)
-      pendingRequests.delete(key)
-    }
+  // 清理所有pending请求（因为我们现在存储的是Promise，无法判断时间戳）
+  // 正常情况下请求会在完成后自动清理，这只是兜底机制
+  if (pendingRequests.size > 100) {
+    console.warn(`Clearing ${pendingRequests.size} pending requests to prevent memory leak`)
+    pendingRequests.clear()
   }
-}, 30000) // 每30秒清理一次
+}, 30000) // 每30秒检查一次
 
 export default apiClient
