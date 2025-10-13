@@ -580,7 +580,7 @@ class ProposalService:
                 target_role="treasury",
                 amount_eth=INCENTIVE_CONFIG['proposal_reward'],
                 data=f"0x{data_string.encode().hex()}",
-                creator_role=operator_role
+                creator_role="operator_0"
             )
 
             # 3. 在数据库中创建缓存记录
@@ -829,9 +829,9 @@ class SystemInfoService:
         """获取系统状态信息"""
         try:
             # 检查各个组件状态
-            ganache_connected = self.web3_manager.is_connected()
+            blockchain_connected = self.web3_manager.is_connected()
             database_connected = True  # 如果到这里说明数据库连接正常
-            
+
             # 检查AI模型是否加载
             ai_model_loaded = False
             try:
@@ -840,18 +840,18 @@ class SystemInfoService:
                 ai_model_loaded = model is not None
             except:
                 ai_model_loaded = False
-            
+
             # 获取账户余额
             accounts_info = self.web3_manager.get_all_accounts_info()
             account_balances = {acc['role']: acc['balance_eth'] for acc in accounts_info}
-            
+
             return {
-                "status": "operational" if ganache_connected and database_connected else "degraded",
-                "ganache_connected": ganache_connected,
-                "database_connected": database_connected, 
+                "status": "operational" if blockchain_connected and database_connected else "degraded",
+                "blockchain_connected": blockchain_connected,
+                "database_connected": database_connected,
                 "ai_model_loaded": ai_model_loaded,
                 "account_balances": account_balances,
-                "blockchain": {"status": "connected" if ganache_connected else "disconnected"},
+                "blockchain": {"status": "connected" if blockchain_connected else "disconnected"},
                 "accounts": accounts_info,
                 "network": self.web3_manager.get_network_info()
             }
@@ -859,7 +859,7 @@ class SystemInfoService:
             logger.error(f"获取系统状态失败: {e}")
             return {
                 "status": "error",
-                "ganache_connected": False,
+                "blockchain_connected": False,
                 "database_connected": False,
                 "ai_model_loaded": False,
                 "error": str(e)

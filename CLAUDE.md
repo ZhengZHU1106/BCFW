@@ -325,6 +325,39 @@ POST /api/test/auto-distribute  # Test automatic reward distribution
 - Operator accounts (operator_0/1) create proposals with smart contract permission enforcement
 - Web3.py handles all blockchain interactions via DevLeChain RPC (http://127.0.0.1:8545)
 
+**Contract Setup Requirements (DevLeChain):**
+After deploying the MultiSigProposal contract to DevLeChain, the following initialization steps are REQUIRED:
+
+1. **Assign OPERATOR Roles** (Critical for proposal creation):
+   ```python
+   # operator_0 and operator_1 must be registered as OPERATOR role in contract
+   contract.functions.assignRole(operator_address, 1).transact()  # 1 = OPERATOR
+   ```
+   - Without this, proposal creation will fail with "Transaction failed with status 0"
+   - Only accounts with OPERATOR or MANAGER role can create proposals
+   - Verify with: `contract.functions.getUserRole(address).call()` should return 1
+
+2. **Fund Contract Balance** (Critical for proposal rewards):
+   ```python
+   # Contract must have ETH balance to fund proposal rewards (0.01 ETH per proposal)
+   contract.functions.depositToRewardPool().transact({'value': web3.to_wei(10, 'ether')})
+   ```
+   - Contract checks `address(this).balance >= amount` before creating proposals
+   - Recommended initial deposit: 10 ETH (enough for 1000 proposals)
+   - Verify with: `web3.eth.get_balance(contract_address)`
+
+3. **Configure Creator Role in Code**:
+   - File: `backend/app/services.py`
+   - Line 495 (auto proposal): `creator_role="operator_0"`
+   - Line 583 (manual proposal): `creator_role="operator_0"`
+   - Must use an account with OPERATOR role (NOT manager accounts)
+
+**Common Issues After DevLeChain Deployment:**
+- ❌ **Proposal creation fails**: Check operator role assignment and contract balance
+- ❌ **"Transaction failed with status 0"**: Usually means missing role or insufficient balance
+- ❌ **Proposals have NULL contract_proposal_id**: Created before proper setup, cannot be processed
+- ✅ **Verification**: Test with `simulate medium threat` to confirm full workflow
+
 **Historical Account Management (Phase 1-16):**
 - HD wallet with BIP39 mnemonic for deterministic addresses
 - Account generation from mnemonic indices
