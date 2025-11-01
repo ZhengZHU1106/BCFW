@@ -1,9 +1,9 @@
 {
   "address": "0x18665064FE254208c7003030e6ecc6F322aDE9e0",
   "deployer": "0x3BDEb75351468e39d60B32aF39df6f030C42E14f",
-  "tx_hash": "060fa44e5047913350ca1e1d469f640b6f0e234d5ecf16ee3dfdae6c3d240d1b",
-  "block_number": 732,
-  "gas_used": 2347984,
+  "tx_hash": "fff2ec1911869fa6843032703ec004a2f57e322a5a6b9e40762403abef1aed4f",
+  "block_number": 4,
+  "gas_used": 4104011,
   "owners": [
     "0x3BDEb75351468e39d60B32aF39df6f030C42E14f",
     "0x96BDDef5e941Cf35B7f63193b53047ad40e9C568",

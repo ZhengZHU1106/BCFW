@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Set
 import logging
 import json
 import os
-from ..config import DEVLECHAIN_CONFIG, INCENTIVE_CONFIG, HIDDEN_NODES
+from ..config import get_devlechain_config, INCENTIVE_CONFIG, HIDDEN_NODES
 
 logger = logging.getLogger(__name__)
 
@@ -16,10 +16,12 @@ class Web3Manager:
     """Web3连接和账户管理器"""
 
     def __init__(self):
+        self.chain_config = get_devlechain_config()
         self.w3: Optional[Web3] = None
         self.accounts: Dict[str, str] = {}  # role -> address
         self.private_keys: Dict[str, str] = {}  # role -> private_key
         self.multisig_contract = None
+        self.multisig_config: Optional[Dict[str, str]] = None
         self.visible_nodes: Set[str] = set()  # 当前可见的节点集合
         self._initialize_connection()
         self._setup_accounts()
@@ -29,12 +31,13 @@ class Web3Manager:
     def _initialize_connection(self):
         """初始化Web3连接"""
         try:
-            self.w3 = Web3(Web3.HTTPProvider(DEVLECHAIN_CONFIG['rpc_url']))
+            rpc_url = self.chain_config['rpc_url']
+            self.w3 = Web3(Web3.HTTPProvider(rpc_url))
 
             if not self.w3.is_connected():
-                raise ConnectionError(f"无法连接到DevLeChain: {DEVLECHAIN_CONFIG['rpc_url']}")
+                raise ConnectionError(f"无法连接到DevLeChain: {rpc_url}")
 
-            logger.info(f"✅ Web3连接成功: {DEVLECHAIN_CONFIG['rpc_url']}")
+            logger.info(f"✅ Web3连接成功: {rpc_url}")
             logger.info(f"🔗 网络ID: {self.w3.eth.chain_id}")
             logger.info(f"📦 当前区块: {self.w3.eth.block_number}")
 
@@ -45,9 +48,9 @@ class Web3Manager:
     def _setup_accounts(self):
         """从DevLeChain keystore加载账户"""
         try:
-            keystore_dir = DEVLECHAIN_CONFIG.get('keystore_dir')
-            password = DEVLECHAIN_CONFIG.get('password')
-            accounts_config = DEVLECHAIN_CONFIG['accounts']
+            keystore_dir = self.chain_config.get('keystore_dir')
+            password = self.chain_config.get('password')
+            accounts_config = self.chain_config['accounts']
 
             # 检查是否是新的DevLeChain配置(地址而非索引)
             first_account_value = list(accounts_config.values())[0]
@@ -114,8 +117,8 @@ class Web3Manager:
         """使用助记词派生账户(Legacy模式-向后兼容，已弃用)"""
         Account.enable_unaudited_hdwallet_features()
 
-        mnemonic = DEVLECHAIN_CONFIG.get('mnemonic', '')
-        account_mapping = DEVLECHAIN_CONFIG['accounts']
+        mnemonic = self.chain_config.get('mnemonic', '')
+        account_mapping = self.chain_config['accounts']
 
         for role, index in account_mapping.items():
             account = Account.from_mnemonic(
@@ -223,7 +226,7 @@ class Web3Manager:
             "block_number": self.w3.eth.block_number,
             "gas_price": self.w3.eth.gas_price,
             "is_connected": self.w3.is_connected(),
-            "rpc_url": DEVLECHAIN_CONFIG['rpc_url']
+            "rpc_url": self.chain_config['rpc_url']
         }
     
     def send_reward(self, from_role: str, to_role: str, amount_eth: float = None) -> Dict:
@@ -290,22 +293,35 @@ class Web3Manager:
     def _initialize_multisig_contract(self):
         """初始化多签名合约集成"""
         try:
-            # 导入多签名合约集成模块
             from .multisig_contract import MultiSigContract
+
             self.multisig_contract = MultiSigContract(self)
+            self.multisig_config = {
+                "address": self.multisig_contract.contract_address,
+                "abi": self.multisig_contract.contract_abi,
+                "mode": self.chain_config.get("mode", "poa"),
+                "contract_config_path": self.chain_config.get("contract_config_path"),
+            }
 
-            # 加载合约配置（注意：MultiSigContract已经在内部加载了deployed_contract.json）
-            config_path = os.path.join(os.path.dirname(__file__), '../assets/deployed_contract.json')
-            if os.path.exists(config_path):
-                with open(config_path, 'r') as f:
-                    self.multisig_config = json.load(f)
-                logger.info(f"✅ MultiSig合约集成成功: {self.multisig_config['address']}")
-            else:
-                logger.warning(f"⚠️ MultiSig合约配置文件不存在: {config_path}")
-                self.multisig_config = None
+            logger.info(
+                "✅ MultiSig 合约已初始化\n"
+                f"   Address: {self.multisig_config['address']}\n"
+                f"   Mode: {self.multisig_config['mode']}"
+            )
 
-        except Exception as e:
-            logger.error(f"❌ MultiSig合约初始化失败: {e}")
+        except FileNotFoundError as exc:
+            logger.warning(
+                "⚠️ 未找到多签合约配置 (%s). 区块链集成暂时禁用。",
+                exc,
+            )
+            self.multisig_contract = None
+            self.multisig_config = None
+        except ValueError as exc:
+            logger.error(f"❌ 多签合约配置无效: {exc}")
+            self.multisig_contract = None
+            self.multisig_config = None
+        except Exception as exc:
+            logger.error(f"❌ MultiSig合约初始化失败: {exc}")
             self.multisig_contract = None
             self.multisig_config = None
     
@@ -573,17 +589,27 @@ class Web3Manager:
             }
 
 # 全局Web3管理器实例
-web3_manager = None
+web3_manager: Optional[Web3Manager] = None
+
+
+def reset_web3_manager() -> None:
+    """清除全局缓存，供共识模式切换后调用"""
+
+    global web3_manager
+    web3_manager = None
+
 
 def get_web3_manager() -> Web3Manager:
     """获取Web3管理器单例"""
+
     global web3_manager
     if web3_manager is None:
         web3_manager = Web3Manager()
     return web3_manager
 
-def init_web3_manager():
-    """初始化Web3管理器"""
-    global web3_manager
-    web3_manager = Web3Manager()
-    return web3_manager
+
+def init_web3_manager() -> Web3Manager:
+    """重新初始化Web3管理器"""
+
+    reset_web3_manager()
+    return get_web3_manager()

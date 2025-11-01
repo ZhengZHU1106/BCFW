@@ -5,6 +5,7 @@ __pycache__/
 *.pyd
 
 # Database
+*.db
 security_platform.db
 
 # Data and Models
@@ -66,9 +67,22 @@ reference_implementations/
 .backend.pid
 .devlechain.pid
 .frontend.pid
+.blockchain.pid
 
 # Playwright MCP
 .playwright-mcp/
 
 # Solidity build artifacts
 contracts/build/
+
+# PoA Chain & Blockchain Data
+.poa_chain/
+.backups/
+.devlechain_keystore_password
+
+# Temporary & Swap Files
+*.tmp
+.*.swp
+
+# Documentation (large PDFs)
+survey_blockchain.pdf

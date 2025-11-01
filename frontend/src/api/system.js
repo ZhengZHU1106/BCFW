@@ -6,6 +6,11 @@ export const systemAPI = {
     return apiClient.get('/system/status')
   },
 
+  // 获取系统概览（带缓存）
+  getSystemOverview() {
+    return apiClient.get('/system/overview')
+  },
+
   // Alias for backward compatibility (used by ProposalCard.vue)
   getSystemStatus() {
     return this.getStatus()

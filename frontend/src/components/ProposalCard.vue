@@ -167,6 +167,16 @@
         <p>Rejected by: {{ rejectionDetails }}</p>
       </div>
     </div>
+
+    <div v-if="proposal.status === 'invalid'" class="invalid-result">
+      <div class="result-header">
+        <span class="result-icon">⚠️</span>
+        <span class="result-text">Proposal Invalid</span>
+      </div>
+      <div class="result-details">
+        <p>This record no longer exists on-chain and has been preserved for reference only.</p>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -214,7 +224,8 @@ const statusClass = computed(() => {
     'pending': 'badge-warning',
     'approved': 'badge-success',
     'rejected': 'badge-danger',
-    'withdrawn': 'badge-secondary'
+    'withdrawn': 'badge-secondary',
+    'invalid': 'badge-danger'
   }
   return mapping[props.proposal.status] || 'badge-secondary'
 })
@@ -224,7 +235,8 @@ const statusText = computed(() => {
     'pending': 'Pending',
     'approved': 'Approved', 
     'rejected': 'Rejected',
-    'withdrawn': 'Withdrawn'
+    'withdrawn': 'Withdrawn',
+    'invalid': 'Invalid'
   }
   return mapping[props.proposal.status] || 'Unknown'
 })
@@ -789,6 +801,19 @@ onMounted(async () => {
 
 .rejection-result .result-details p {
   margin: 0;
+}
+
+.invalid-result {
+  background-color: #fff3cd;
+  border: 1px solid #ffeeba;
+  border-radius: 4px;
+  padding: 1rem;
+  margin-top: 1rem;
+}
+
+.invalid-result .result-text,
+.invalid-result .result-details {
+  color: #856404;
 }
 
 /* Demo Mode Styles */

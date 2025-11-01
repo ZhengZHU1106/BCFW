@@ -4,7 +4,7 @@
 
 import random
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TYPE_CHECKING
 from sqlalchemy.orm import Session
 import logging
 import pandas as pd
@@ -13,6 +13,9 @@ import torch
 import os
 import sys
 import threading
+
+if TYPE_CHECKING:
+    from fastapi import BackgroundTasks
 
 from ..database.models import Proposal, ExecutionLog, ThreatDetectionLog
 from ..blockchain.web3_manager import get_web3_manager
@@ -26,23 +29,36 @@ from predictor import HierarchicalPredictor
 
 logger = logging.getLogger(__name__)
 
+# 缓存失效助手（延迟导入避免循环依赖）
+def invalidate_overview_cache() -> None:
+    try:
+        from backend.main import invalidate_system_overview_cache
+    except Exception:
+        logger.debug("System overview cache invalidation skipped (main module not ready)")
+        return
+
+    try:
+        invalidate_system_overview_cache()
+    except Exception as exc:  # pragma: no cover - 仅记录失败
+        logger.debug(f"System overview cache invalidation failed: {exc}")
+
 # 全局模型实例
 _threat_model = None
+_threat_model_lock = threading.Lock()
 
 def get_threat_model():
-    """获取威胁检测模型单例 - 直接使用 HierarchicalPredictor"""
+    """获取威胁检测模型单例 - 使用懒加载模式"""
     global _threat_model
     if _threat_model is None:
-        # 使用config中定义的路径
-        model_package_path = str(AI_MODEL_CONFIG['model_package_dir'])
-        
-        logger.info(f"正在从以下路径加载模型包: {model_package_path}")
-        _threat_model = HierarchicalPredictor(model_package_path, device='cpu', debug=False)
-        
-        # 为模型加载推理数据
-        _load_inference_data(_threat_model)
-        # 为向后兼容性添加方法
-        _add_compatibility_methods(_threat_model)
+        with _threat_model_lock:
+            if _threat_model is None:
+                model_package_path = str(AI_MODEL_CONFIG['model_package_dir'])
+                logger.info(f"正在初始化威胁检测模型（懒加载）: {model_package_path}")
+                model = HierarchicalPredictor(model_package_path, device='cpu', debug=False)
+                setattr(model, "_inference_data_loaded", False)
+                setattr(model, "_inference_data_lock", threading.Lock())
+                _add_compatibility_methods(model)
+                _threat_model = model
     return _threat_model
 
 def _load_inference_data(model):
@@ -60,6 +76,8 @@ def _load_inference_data(model):
         model.inference_data = None
         model.inference_labels = None
         model.inference_class_names = None
+    finally:
+        setattr(model, "_inference_data_loaded", True)
 
 def _load_preprocessed_data(model):
     """加载预处理的inference_data.pt文件"""
@@ -147,11 +165,38 @@ def _load_original_data(model):
     else:
         raise Exception("没有找到任何原始数据文件")
 
+def _ensure_inference_data_loaded(model):
+    """确保推理数据在首次需要时加载"""
+    if getattr(model, "_inference_data_loaded", False):
+        return
+
+    lock = getattr(model, "_inference_data_lock", None)
+    if lock is None:
+        lock = threading.Lock()
+        setattr(model, "_inference_data_lock", lock)
+
+    with lock:
+        if getattr(model, "_inference_data_loaded", False):
+            return
+
+        logger.info("📥 首次访问威胁模型推理数据，开始加载...")
+
+        ensure_model = getattr(model, "_ensure_model_loaded", None)
+        if callable(ensure_model):
+            ensure_model()
+        elif hasattr(model, "_load_model"):
+            model._load_model()
+
+        _load_inference_data(model)
+        logger.info("📥 推理数据加载流程结束")
+
 def _add_compatibility_methods(model):
     """为 HierarchicalPredictor 添加兼容方法以适应旧的Service层调用"""
     
     def simulate_attack_detection():
         """模拟攻击检测 - 兼容旧接口"""
+        _ensure_inference_data_loaded(model)
+
         if not hasattr(model, 'inference_data') or model.inference_data is None:
             return _generate_random_prediction()
         
@@ -200,6 +245,8 @@ def _add_compatibility_methods(model):
     
     def simulate_medium_threat_detection():
         """模拟中等威胁检测 - 专门生成需要提案的威胁 (置信度 0.70-0.90)"""
+        _ensure_inference_data_loaded(model)
+
         if not hasattr(model, 'inference_data') or model.inference_data is None:
             return _generate_medium_random_prediction()
 
@@ -431,8 +478,28 @@ class ThreatDetectionService:
             execution_log = self._execute_automatic_response(db, detection_result, target_ip)
             return {"action_taken": "automatic_block", "execution_log_id": execution_log.id, "description": "高置信度威胁，自动执行封锁"}
         elif response_level == "auto_create_proposal":
-            proposal = self._create_auto_proposal(db, detection_result, target_ip)
-            return {"action_taken": "auto_proposal_created", "proposal_id": proposal.id, "description": "中高置信度威胁，已自动创建提案等待Manager审批"}
+            try:
+                proposal = self._create_auto_proposal(db, detection_result, target_ip)
+                detection_log.proposal_id = proposal.id
+                detection_log.action_taken = "auto_proposal_created"
+                db.commit()
+                invalidate_overview_cache()
+                return {
+                    "action_taken": "auto_proposal_created",
+                    "proposal_id": proposal.id,
+                    "description": "中高置信度威胁，已自动创建提案等待Manager审批"
+                }
+            except Exception as exc:
+                logger.error(f"❌ 自动创建链上提案失败: {exc}")
+                db.rollback()
+                detection_log.action_taken = "auto_proposal_failed"
+                db.add(detection_log)
+                db.commit()
+                invalidate_overview_cache()
+                return {
+                    "action_taken": "auto_proposal_failed",
+                    "description": "区块链事务失败，提案未创建"
+                }
         elif response_level == "manual_decision_alert":
             return {"action_taken": "manual_alert", "description": "中低置信度威胁，已生成告警等待Operator手动决策"}
         else:
@@ -455,8 +522,20 @@ class ThreatDetectionService:
         return execution_log
 
     def _create_auto_proposal(self, db: Session, detection_result: Dict, target_ip: str) -> Proposal:
-        """创建自动提案 - 区块链优先模式（优化：等待区块链确认，最多10秒）"""
-        # 1. 先在数据库中创建记录
+        """创建自动提案 - 先确保链上成功，再写入数据库"""
+        threat_type = detection_result.get('predicted_class', 'Unknown')
+        data_string = f'Auto-block IP {target_ip} - {threat_type}'
+
+        contract_result = self.web3_manager.create_multisig_proposal(
+            target_role="treasury",
+            amount_eth=INCENTIVE_CONFIG['proposal_reward'],
+            data=f"0x{data_string.encode().hex()}",
+            creator_role="operator_0"
+        )
+
+        if not contract_result.get("success"):
+            raise ValueError(f"Blockchain proposal creation failed: {contract_result.get('error')}")
+
         proposal = Proposal(
             threat_type=detection_result['predicted_class'],
             confidence=detection_result['confidence'],
@@ -465,77 +544,17 @@ class ThreatDetectionService:
             target_ip=target_ip,
             action_type="block",
             detection_data=detection_result,
-            contract_proposal_id=None,  # 稍后由后台线程更新
-            contract_address=None
+            contract_proposal_id=contract_result.get("proposal_id"),
+            contract_address=contract_result.get("contract_address")
         )
 
         db.add(proposal)
-        db.commit()  # 立即提交，确保数据库记录存在
+        db.flush()
 
-        proposal_id = proposal.id
-        logger.info(f"📝 创建数据库提案记录: DB-ID-{proposal_id}")
-
-        # 2. 使用Event来同步主线程和后台线程
-        blockchain_ready = threading.Event()
-
-        # 2. 在后台线程中创建区块链提案
-        def create_blockchain_proposal_async():
-            """后台线程：异步创建区块链提案"""
-            from ..database.connection import get_db
-            try:
-                threat_type = detection_result.get('predicted_class', 'Unknown')
-                data_string = f'Auto-block IP {target_ip} - {threat_type}'
-
-                # 调用智能合约（可能需要等待挖矿）
-                logger.info(f"🔄 后台线程开始创建区块链提案: DB-ID-{proposal_id}")
-                contract_result = self.web3_manager.create_multisig_proposal(
-                    target_role="treasury",
-                    amount_eth=INCENTIVE_CONFIG['proposal_reward'],
-                    data=f"0x{data_string.encode().hex()}",
-                    creator_role="operator_0"
-                )
-
-                # 3. 更新数据库记录（使用新的session）
-                db_session = next(get_db())
-                try:
-                    db_proposal = db_session.query(Proposal).filter(Proposal.id == proposal_id).first()
-                    if db_proposal:
-                        if contract_result.get("success"):
-                            db_proposal.contract_proposal_id = contract_result.get("proposal_id")
-                            db_proposal.contract_address = contract_result.get("contract_address")
-                            db_session.commit()
-                            logger.info(f"✅ 区块链提案创建成功: DB-ID-{proposal_id}, Contract-ID-{contract_result['proposal_id']}")
-                        else:
-                            logger.warning(f"⚠️ 区块链提案创建失败: {contract_result.get('error')} - 保留数据库记录")
-                except Exception as e:
-                    logger.error(f"❌ 更新数据库记录失败: {e}")
-                    db_session.rollback()
-                finally:
-                    db_session.close()
-                    # 无论成功失败，都通知主线程
-                    blockchain_ready.set()
-
-            except Exception as e:
-                logger.error(f"❌ 后台线程区块链提案创建失败: {e}")
-                blockchain_ready.set()  # 即使失败也要通知主线程
-
-        # 启动后台线程（守护线程，主进程退出时自动结束）
-        thread = threading.Thread(target=create_blockchain_proposal_async, daemon=True)
-        thread.start()
-        logger.info(f"🚀 已启动后台线程处理区块链提案")
-
-        # 3. 等待区块链提案创建完成（最多10秒）
-        logger.info(f"⏳ 等待区块链提案创建完成（最多10秒）...")
-        blockchain_ready.wait(timeout=10)
-
-        # 4. 重新查询数据库获取最新的contract_proposal_id
-        db.refresh(proposal)
-
-        if proposal.contract_proposal_id:
-            logger.info(f"✅ 提案创建完成: DB-ID-{proposal_id}, Contract-ID-{proposal.contract_proposal_id}")
-        else:
-            logger.warning(f"⚠️ 提案创建超时或失败: DB-ID-{proposal_id}, contract_proposal_id未设置")
-
+        logger.info(
+            "📝 自动创建区块链提案成功: Contract-ID-%s",
+            contract_result.get("proposal_id"),
+        )
         return proposal
 
     def _generate_random_ip(self) -> str:
@@ -545,7 +564,37 @@ class ThreatDetectionService:
 class ProposalService:
     def __init__(self):
         self.web3_manager = get_web3_manager()
-    
+
+    @staticmethod
+    def _lower(address: Optional[str]) -> Optional[str]:
+        return address.lower() if isinstance(address, str) else None
+
+    def _ensure_active_contract(self, proposal: Proposal) -> None:
+        """确保提案对应当前PoA合约，旧PoW提案保持只读"""
+
+        multisig = getattr(self.web3_manager, "multisig_config", None)
+        current_address = (multisig or {}).get("address") if multisig else None
+        if not current_address:
+            raise ValueError(
+                "PoA multisig contract未初始化。请运行 bootstrap 脚本后重试。"
+            )
+
+        proposal_address = proposal.contract_address
+        if proposal_address and self._lower(proposal_address) != self._lower(current_address):
+            raise ValueError(
+                "该提案创建于旧的 PoW 合约，已作为历史记录保留。"
+            )
+
+    def _mark_proposal_invalid(self, db: Session, proposal: Proposal, reason: str) -> None:
+        """将提案标记为无效并刷新缓存"""
+
+        proposal.status = "invalid"
+        proposal.rejected_by = None
+        proposal.rejected_at = None
+        db.commit()
+        invalidate_overview_cache()
+        logger.warning("⚠️ 提案 %s 被标记为无效: %s", proposal.id, reason)
+
     def get_pending_proposals(self, db: Session) -> List[Dict]:
         """获取待处理的提案列表"""
         proposals = db.query(Proposal).filter(Proposal.status == "pending").all()
@@ -580,10 +629,13 @@ class ProposalService:
                 target_role="treasury",
                 amount_eth=INCENTIVE_CONFIG['proposal_reward'],
                 data=f"0x{data_string.encode().hex()}",
-                creator_role="operator_0"
+                creator_role=operator_role
             )
 
-            # 3. 在数据库中创建缓存记录
+            if not contract_result.get("success"):
+                raise ValueError(f"Blockchain proposal creation failed: {contract_result.get('error')}")
+
+            # 3. 在数据库中创建记录
             proposal = Proposal(
                 threat_type=detection_log.threat_type,
                 confidence=detection_log.confidence,
@@ -592,8 +644,8 @@ class ProposalService:
                 target_ip=detection_log.target_ip,
                 action_type=action,
                 detection_data=detection_log.detection_data,
-                contract_proposal_id=contract_result.get("proposal_id") if contract_result.get("success") else None,
-                contract_address=contract_result.get("contract_address") if contract_result.get("success") else None
+                contract_proposal_id=contract_result.get("proposal_id"),
+                contract_address=contract_result.get("contract_address")
             )
 
             db.add(proposal)
@@ -604,18 +656,21 @@ class ProposalService:
             detection_log.action_taken = "manual_proposal_created"
 
             db.commit()
+            invalidate_overview_cache()
 
-            if contract_result.get("success"):
-                logger.info(f"📝 手动创建区块链提案: DB-ID-{proposal.id}, Contract-ID-{contract_result['proposal_id']}, Operator-{operator_role}")
-                return {
-                    "success": True,
-                    "proposal_id": proposal.id,
-                    "contract_proposal_id": contract_result['proposal_id'],
-                    "tx_hash": contract_result.get('tx_hash'),
-                    "message": "Manual proposal created successfully"
-                }
-            else:
-                raise ValueError(f"Blockchain proposal creation failed: {contract_result.get('error')}")
+            logger.info(
+                "📝 手动创建区块链提案: DB-ID-%s, Contract-ID-%s, Operator-%s",
+                proposal.id,
+                contract_result.get('proposal_id'),
+                operator_role,
+            )
+            return {
+                "success": True,
+                "proposal_id": proposal.id,
+                "contract_proposal_id": contract_result['proposal_id'],
+                "tx_hash": contract_result.get('tx_hash'),
+                "message": "Manual proposal created successfully"
+            }
 
         except Exception as e:
             logger.error(f"❌ Create manual proposal failed: {e}")
@@ -626,13 +681,65 @@ class ProposalService:
     # ProposalService 现在专注于数据库查询操作
     # 签名和拒绝操作现在通过 MultiSigContract 处理，确保完整的奖励分发和贡献度更新
 
-    def sign_proposal(self, db: Session, proposal_id: int, signer_role: str) -> Dict:
-        """Manager签名提案 - 区块链优先模式（优化：异步状态同步）"""
+    def sign_proposal(
+        self,
+        db: Session,
+        proposal_id: int,
+        signer_role: str,
+        background_tasks: Optional["BackgroundTasks"] = None,
+    ) -> Dict:
+        """Manager签名提案 - 支持后台异步提交"""
         try:
-            # 1. 查找数据库中的提案（获取contract_proposal_id）
             proposal = db.query(Proposal).filter(Proposal.id == proposal_id).first()
             if not proposal:
                 raise ValueError(f"Proposal {proposal_id} not found")
+
+            if proposal.status != 'pending':
+                raise ValueError(f"Proposal {proposal_id} is not pending")
+
+            if proposal.contract_proposal_id is None:
+                raise ValueError(f"Proposal {proposal_id} has no contract_proposal_id")
+
+            self._ensure_active_contract(proposal)
+
+            contract_state = self.web3_manager.get_multisig_proposal(proposal.contract_proposal_id)
+            if not contract_state.get("success") or not contract_state.get("proposal"):
+                self._mark_proposal_invalid(db, proposal, "On-chain proposal missing")
+                raise ValueError("Proposal no longer exists on-chain; it has been marked invalid")
+
+            if background_tasks is None:
+                return self._sign_proposal_sync(db, proposal_id, signer_role, proposal=proposal)
+
+            background_tasks.add_task(self._sign_proposal_background_job, proposal_id, signer_role)
+            logger.info(f"📝 已将提案签名任务提交到后台: DB-ID-{proposal_id}, Signer-{signer_role}")
+
+            return {
+                "success": True,
+                "proposal_id": proposal_id,
+                "contract_proposal_id": proposal.contract_proposal_id,
+                "signer_role": signer_role,
+                "status": "processing",
+                "message": "Signature transaction scheduled; blockchain execution in progress"
+            }
+
+        except Exception as e:
+            logger.error(f"❌ Sign proposal scheduling failed: {e}")
+            db.rollback()
+            return {"success": False, "error": str(e)}
+
+    def _sign_proposal_sync(
+        self,
+        db: Session,
+        proposal_id: int,
+        signer_role: str,
+        proposal: Optional[Proposal] = None
+    ) -> Dict:
+        """实际执行链上签名并同步数据库"""
+        try:
+            if proposal is None:
+                proposal = db.query(Proposal).filter(Proposal.id == proposal_id).first()
+                if not proposal:
+                    raise ValueError(f"Proposal {proposal_id} not found")
 
             if proposal.status != 'pending':
                 raise ValueError(f"Proposal {proposal_id} is not pending")
@@ -641,14 +748,14 @@ class ProposalService:
             if contract_proposal_id is None:
                 raise ValueError(f"Proposal {proposal_id} has no contract_proposal_id")
 
-            # 2. 调用智能合约签名（区块链是唯一真实状态）
+            self._ensure_active_contract(proposal)
+
             logger.info(f"📝 Signing proposal on blockchain: Contract-ID-{contract_proposal_id}, DB-ID-{proposal_id}, Signer-{signer_role}")
             contract_result = self.web3_manager.sign_multisig_proposal(contract_proposal_id, signer_role)
 
             if not contract_result.get("success"):
                 raise ValueError(f"Smart contract signing failed: {contract_result.get('error')}")
 
-            # 3. 快速更新：立即更新签名者信息，稍后异步同步完整状态
             signed_by = proposal.signed_by or []
             if signer_role not in signed_by:
                 signed_by.append(signer_role)
@@ -656,26 +763,24 @@ class ProposalService:
                 from sqlalchemy.orm.attributes import flag_modified
                 flag_modified(proposal, 'signed_by')
 
-            # 增加签名计数（临时估算，后台线程会同步准确值）
             proposal.signatures_count = len(signed_by)
 
             db.commit()
 
-            logger.info(f"✅ Proposal signed on blockchain: DB-ID-{proposal_id}, Contract-ID-{contract_proposal_id}, returning immediately")
+            invalidate_overview_cache()
 
-            # 4. 在后台线程中异步同步完整状态和处理奖励
+            logger.info(f"✅ Proposal signed on blockchain: DB-ID-{proposal_id}, Contract-ID-{contract_proposal_id}")
+
             def sync_proposal_state_async():
                 """后台线程：异步同步提案状态"""
                 from ..database.connection import get_db
                 try:
                     logger.info(f"🔄 后台同步提案状态: DB-ID-{proposal_id}")
 
-                    # 从区块链获取最新状态
                     contract_proposal = self.web3_manager.get_multisig_proposal(contract_proposal_id)
                     if contract_proposal.get("success") and contract_proposal.get("proposal"):
                         blockchain_data = contract_proposal["proposal"]
 
-                        # 更新数据库
                         db_session = next(get_db())
                         try:
                             db_proposal = db_session.query(Proposal).filter(Proposal.id == proposal_id).first()
@@ -683,12 +788,10 @@ class ProposalService:
                                 db_proposal.signatures_count = blockchain_data["signature_count"]
                                 db_proposal.executed = blockchain_data["executed"]
 
-                                # 如果已执行，更新状态并记录日志
                                 if blockchain_data["executed"] and db_proposal.status != 'approved':
                                     db_proposal.status = 'approved'
                                     db_proposal.approved_at = datetime.utcnow()
 
-                                    # 记录执行日志
                                     execution_log = ExecutionLog(
                                         proposal_id=proposal_id,
                                         action_type=db_proposal.action_type or 'block',
@@ -708,19 +811,17 @@ class ProposalService:
                 except Exception as e:
                     logger.error(f"❌ 后台状态同步失败: {e}")
 
-            # 启动后台线程
             thread = threading.Thread(target=sync_proposal_state_async, daemon=True)
             thread.start()
 
-            # 5. 立即返回结果（不等待后台同步完成）
             return {
                 "success": True,
                 "proposal_id": proposal_id,
                 "contract_proposal_id": contract_proposal_id,
                 "signer_role": signer_role,
-                "signature_count": proposal.signatures_count,  # 临时估算值
+                "signature_count": proposal.signatures_count,
                 "required_signatures": 2,
-                "executed": False,  # 后台线程会更新准确状态
+                "executed": False,
                 "tx_hash": contract_result.get("tx_hash"),
                 "block_number": contract_result.get("block_number"),
                 "note": "Signature confirmed, state sync in progress"
@@ -730,6 +831,20 @@ class ProposalService:
             logger.error(f"❌ Sign proposal failed: {e}")
             db.rollback()
             return {"success": False, "error": str(e)}
+
+    def _sign_proposal_background_job(self, proposal_id: int, signer_role: str) -> None:
+        """后台任务：执行签名并同步状态"""
+        from ..database.connection import get_db
+
+        db_session = next(get_db())
+        try:
+            result = self._sign_proposal_sync(db_session, proposal_id, signer_role)
+            if not result.get("success"):
+                logger.error(f"❌ Async sign proposal failed: {result.get('error')}")
+        except Exception as exc:
+            logger.error(f"❌ Unexpected error in async sign_proposal: {exc}", exc_info=True)
+        finally:
+            db_session.close()
     
     def reject_proposal(self, db: Session, proposal_id: int, manager_role: str) -> Dict:
         """Manager拒绝提案（1-vote veto）- 区块链优先模式"""
@@ -746,6 +861,13 @@ class ProposalService:
             if contract_proposal_id is None:
                 raise ValueError(f"Proposal {proposal_id} has no contract_proposal_id")
 
+            self._ensure_active_contract(proposal)
+
+            contract_state = self.web3_manager.get_multisig_proposal(contract_proposal_id)
+            if not contract_state.get("success") or not contract_state.get("proposal"):
+                self._mark_proposal_invalid(db, proposal, "On-chain proposal missing")
+                raise ValueError("Proposal no longer exists on-chain; it has been marked invalid")
+
             # 2. 调用智能合约拒绝（区块链是唯一真实状态）
             logger.info(f"❌ Rejecting proposal on blockchain: Contract-ID-{contract_proposal_id}, DB-ID-{proposal_id}, Rejector-{manager_role}")
             contract_result = self.web3_manager.reject_multisig_proposal(contract_proposal_id, manager_role)
@@ -759,6 +881,7 @@ class ProposalService:
             proposal.rejected_by = manager_role
 
             db.commit()
+            invalidate_overview_cache()
 
             logger.info(f"✅ Proposal {proposal_id} rejected on blockchain and synced to database")
 

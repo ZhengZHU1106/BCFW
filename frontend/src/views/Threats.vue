@@ -155,6 +155,7 @@
       v-if="selectedThreat"
       :threat="selectedThreat"
       :current-role="currentRole"
+      :is-demo-mode="isDemoMode"
       @close="selectedThreat = null"
       @create-proposal="handleCreateProposal"
     />
@@ -162,12 +163,16 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { systemAPI } from '@/api/system'
 import ThreatAlert from '@/components/ThreatAlert.vue'
 import ConfidenceExplanationModal from '@/components/ConfidenceExplanationModal.vue'
 import ConfidenceTooltip from '@/components/ConfidenceTooltip.vue'
 import ThreatDetailsModal from '@/components/ThreatDetailsModal.vue'
+import { useSystemOverviewStore } from '@/stores/systemOverviewStore'
+
+const systemOverviewStore = useSystemOverviewStore()
+const { state, subscribe, unsubscribe, fetchOverview } = systemOverviewStore
 
 // Threat data
 const threats = ref([])
@@ -175,8 +180,14 @@ const latestThreat = ref(null)
 const isSimulating = ref(false)
 const isSimulatingMedium = ref(false)
 const isDemoMode = ref(false)
-const isLoadingThreats = ref(false)
-const threatsLoadError = ref(null)
+const storeThreats = computed(() => state.overview?.threats || [])
+const isLoadingThreats = computed(() => state.loading && threats.value.length === 0)
+const threatsLoadError = computed(() => {
+  if (state.error && threats.value.length === 0) {
+    return state.error.message || String(state.error)
+  }
+  return null
+})
 
 // Threat statistics
 const threatStats = ref({
@@ -199,6 +210,17 @@ const tooltipAlignClass = ref('')
 
 // 响应式tooltip位置状态
 const tooltipPosition = ref({ left: 0, top: 0, show: false })
+
+watch(
+  storeThreats,
+  (newThreats) => {
+    threats.value = mergeThreats(threats.value, newThreats)
+    updateThreatStats()
+
+    latestThreat.value = newThreats.length > 0 ? newThreats[0] : null
+  },
+  { immediate: true }
+)
 
 // Handle tooltip display with Vue-friendly approach
 const handleTooltipShow = (event) => {
@@ -237,20 +259,11 @@ const handleTooltipShow = (event) => {
   })
 }
 
-// Timer
-let refreshTimer = null
-
 // Simulate attack
 const simulateAttack = async () => {
   if (isSimulating.value) return
 
   isSimulating.value = true
-
-  // 暂停自动刷新
-  if (refreshTimer) {
-    clearInterval(refreshTimer)
-    refreshTimer = null
-  }
 
   try {
     const result = await systemAPI.simulateAttack()
@@ -272,17 +285,13 @@ const simulateAttack = async () => {
       creating: false
     }
 
-    // Refresh threat list
-    await refreshThreats()
+    await fetchOverview()
 
   } catch (error) {
     console.error('Attack simulation failed:', error)
     alert('Attack simulation failed. Please check backend service.')
   } finally {
     isSimulating.value = false
-
-    // 恢复自动刷新
-    refreshTimer = setInterval(refreshThreats, 10000)
   }
 }
 
@@ -291,12 +300,6 @@ const simulateMediumThreat = async () => {
   if (isSimulatingMedium.value) return
 
   isSimulatingMedium.value = true
-
-  // 暂停自动刷新
-  if (refreshTimer) {
-    clearInterval(refreshTimer)
-    refreshTimer = null
-  }
 
   try {
     const result = await systemAPI.simulateMediumThreat()
@@ -334,15 +337,13 @@ const simulateMediumThreat = async () => {
     alert('Medium threat simulation failed. Please check backend service.')
   } finally {
     isSimulatingMedium.value = false
-
-    // 恢复自动刷新
-    refreshTimer = setInterval(refreshThreats, 10000)
+    await fetchOverview()
   }
 }
 
 // Refresh threat list
 // 智能合并威胁数据，避免不必要的DOM重建
-const mergeThreats = (currentThreats, newThreats) => {
+function mergeThreats(currentThreats, newThreats) {
   const newMap = new Map(newThreats.map(t => [t.id, t]))
   const currentMap = new Map(currentThreats.map(t => [t.id, t]))
 
@@ -379,51 +380,11 @@ const mergeThreats = (currentThreats, newThreats) => {
 }
 
 const refreshThreats = async () => {
-  // 防止重复请求
-  if (isLoadingThreats.value) {
-    console.log('Refresh already in progress, skipping...')
-    return
-  }
-
-  isLoadingThreats.value = true
-  threatsLoadError.value = null
-
-  try {
-    const result = await systemAPI.getDetectionLogs()
-    if (result.success) {
-      const newThreats = result.data || []
-
-      // 使用智能合并而不是直接替换
-      threats.value = mergeThreats(threats.value, newThreats)
-
-      // Update statistics
-      updateThreatStats()
-    } else {
-      // API返回失败，但保留现有数据
-      console.warn('API returned failure, keeping existing data:', result)
-      threatsLoadError.value = 'Failed to load threats'
-    }
-  } catch (error) {
-    // 网络错误或超时，保留现有数据
-    console.error('Failed to refresh threat list:', error)
-    threatsLoadError.value = error.message || 'Network error'
-
-    // 如果是首次加载失败，尝试重试一次
-    if (threats.value.length === 0) {
-      console.log('First load failed, retrying in 2s...')
-      setTimeout(() => {
-        isLoadingThreats.value = false
-        refreshThreats()
-      }, 2000)
-      return
-    }
-  } finally {
-    isLoadingThreats.value = false
-  }
+  await fetchOverview()
 }
 
 // Update threat statistics
-const updateThreatStats = () => {
+function updateThreatStats() {
   const stats = {
     high: 0,
     medium: 0,
@@ -431,10 +392,10 @@ const updateThreatStats = () => {
     blocked: 0,
     benign: 0
   }
-  
+
   threats.value.forEach(threat => {
     const threatType = threat.threat_type || threat.true_label
-    
+
     if (threatType === 'Benign') {
       stats.benign++
     } else {
@@ -447,7 +408,7 @@ const updateThreatStats = () => {
         stats.low++
       }
     }
-    
+
     if (threat.status === 'executed' || threat.status === 'approved') {
       stats.blocked++
     }
@@ -471,12 +432,6 @@ const handleCreateProposal = async (threat) => {
 const createProposal = async (threat) => {
   if (threat.creating) return
 
-  // 暂停自动刷新
-  if (refreshTimer) {
-    clearInterval(refreshTimer)
-    refreshTimer = null
-  }
-
   threat.creating = true
   try {
     // Get current operator role from localStorage
@@ -491,17 +446,13 @@ const createProposal = async (threat) => {
     if (result.success) {
       alert('Proposal created successfully!')
       threat.status = 'proposal_created'
-      // Refresh proposals to show the new one
-      await refreshThreats()
+      await fetchOverview()
     }
   } catch (error) {
     console.error('Failed to create proposal:', error)
     alert('Failed to create proposal. Please try again later.')
   } finally {
     threat.creating = false
-
-    // 恢复自动刷新
-    refreshTimer = setInterval(refreshThreats, 10000)
   }
 }
 
@@ -600,19 +551,14 @@ onMounted(() => {
   window.addEventListener('roleChanged', handleRoleChange)
   window.addEventListener('demoModeChanged', handleDemoModeChange)
   
-  // Initialize data
-  refreshThreats()
-  
-  // Regular refresh
-  refreshTimer = setInterval(refreshThreats, 10000)
+  subscribe()
+  fetchOverview()
 })
 
 onUnmounted(() => {
-  if (refreshTimer) {
-    clearInterval(refreshTimer)
-  }
   window.removeEventListener('roleChanged', handleRoleChange)
   window.removeEventListener('demoModeChanged', handleDemoModeChange)
+  unsubscribe()
 })
 </script>
 

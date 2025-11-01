@@ -11,6 +11,16 @@ A demonstration prototype combining AI threat detection with blockchain multi-si
 - Python 3.11+
 - Node.js 22+
 
+**Reset demo state (optional, wipes legacy data):**
+```bash
+./scripts/reset_poa_demo.sh
+```
+
+**Initialise PoA chain (first run / after reset):**
+```bash
+python3 scripts/bootstrap_poa_demo.py
+```
+
 **Start the system:**
 ```bash
 # Start all services (DevLeChain + Backend + Frontend)

@@ -14,6 +14,7 @@
           <option value="approved">Approved</option>
           <option value="rejected">Rejected</option>
           <option value="withdrawn">Withdrawn</option>
+          <option value="invalid">Invalid</option>
         </select>
         <button @click="refreshProposals" class="btn btn-secondary">
           Refresh
@@ -44,6 +45,10 @@
           <div class="stat-value">{{ proposalStats.withdrawn }}</div>
           <div class="stat-label">Withdrawn</div>
         </div>
+        <div class="stat-card card">
+          <div class="stat-value">{{ proposalStats.invalid }}</div>
+          <div class="stat-label">Invalid</div>
+        </div>
       </div>
     </div>
 
@@ -69,116 +74,83 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { systemAPI } from '@/api/system'
+import { useSystemOverviewStore } from '@/stores/systemOverviewStore'
 import ProposalCard from '@/components/ProposalCard.vue'
 
-// Proposal data
-const proposals = ref([])
+const systemOverviewStore = useSystemOverviewStore()
+const { state, subscribe, unsubscribe, fetchOverview } = systemOverviewStore
+
 const statusFilter = ref('all')
 const currentRole = ref('operator_0')
 const isDemoMode = ref(false)
+const signingInProgress = ref(new Set())
 
-// Timer
-let refreshTimer = null
+const proposals = computed(() => state.overview?.proposals?.history || [])
 
-// Computed properties
 const filteredProposals = computed(() => {
   if (statusFilter.value === 'all') {
     return proposals.value
   }
-  return proposals.value.filter(p => p.status === statusFilter.value)
+  return proposals.value.filter((p) => p.status === statusFilter.value)
 })
 
 const proposalStats = computed(() => {
+  const summary = state.overview?.proposals?.summary
+  if (summary) {
+    return {
+      total: summary.total ?? proposals.value.length,
+      pending: summary.pending ?? 0,
+      approved: summary.approved ?? 0,
+      rejected: summary.rejected ?? 0,
+      withdrawn: summary.withdrawn ?? 0,
+      invalid: summary.invalid ?? 0
+    }
+  }
+
   const stats = {
     total: proposals.value.length,
     pending: 0,
     approved: 0,
     rejected: 0,
-    withdrawn: 0
+    withdrawn: 0,
+    invalid: 0
   }
-  
-  proposals.value.forEach(proposal => {
-    if (proposal.status === 'pending') stats.pending++
-    else if (proposal.status === 'approved') stats.approved++
-    else if (proposal.status === 'rejected') stats.rejected++
-    else if (proposal.status === 'withdrawn') stats.withdrawn++
+
+  proposals.value.forEach((proposal) => {
+    if (proposal.status === 'pending') stats.pending += 1
+    else if (proposal.status === 'approved') stats.approved += 1
+    else if (proposal.status === 'rejected') stats.rejected += 1
+    else if (proposal.status === 'withdrawn') stats.withdrawn += 1
+    else if (proposal.status === 'invalid') stats.invalid += 1
   })
-  
+
   return stats
 })
 
-// 智能差异更新函数，避免完全替换数组
-const mergeProposals = (currentProposals, newProposals) => {
-  const newMap = new Map(newProposals.map(p => [p.id, p]))
-  const currentMap = new Map(currentProposals.map(p => [p.id, p]))
-
-  // 更新现有提案或添加新的
-  const mergedProposals = []
-
-  // 处理新的和更新的提案
-  for (const newProposal of newProposals) {
-    const existing = currentMap.get(newProposal.id)
-    if (existing) {
-      // 只有在真正有变化时才更新
-      if (JSON.stringify(existing) !== JSON.stringify(newProposal)) {
-        mergedProposals.push({ ...newProposal })
-      } else {
-        // 保持现有对象引用，避免重渲染
-        mergedProposals.push(existing)
-      }
-    } else {
-      // 新提案
-      mergedProposals.push({ ...newProposal })
-    }
-  }
-
-  return mergedProposals
-}
-
-// Refresh proposal list with smart update
 const refreshProposals = async () => {
-  try {
-    const result = await systemAPI.getProposals()
-    if (result.success && result.data) {
-      const newProposals = result.data.history || []
-
-      // 使用智能合并而不是直接替换
-      proposals.value = mergeProposals(proposals.value, newProposals)
-    }
-  } catch (error) {
-    console.error('Failed to refresh proposal list:', error)
-  }
+  await fetchOverview()
 }
-
-// Handle proposal signing
-const signingInProgress = ref(new Set())
 
 const handleSignProposal = async (proposalId, managerIndex) => {
   const signingKey = `${proposalId}-${managerIndex}`
-  
-  // Prevent duplicate signing attempts
+
   if (signingInProgress.value.has(signingKey)) {
     console.log('Signing already in progress for this proposal and manager')
     return
   }
-  
+
   signingInProgress.value.add(signingKey)
-  
-  // Pause auto-refresh during signing to prevent race conditions
-  if (refreshTimer) {
-    clearInterval(refreshTimer)
-  }
-  
+  let refreshed = false
+
   try {
     const result = await systemAPI.signProposal(proposalId, managerIndex)
     if (result.success) {
-      // Refresh list immediately to show updated state
-      await refreshProposals()
-      
-      // Check if proposal is still pending, if not it was executed
-      const updatedProposal = proposals.value.find(p => p.id === proposalId)
+      await fetchOverview()
+      refreshed = true
+
+      const updatedProposal = proposals.value.find((p) => p.id === proposalId)
       if (!updatedProposal || updatedProposal.status !== 'pending') {
         alert('✅ Proposal approved and executed successfully! Rewards have been distributed.')
       } else {
@@ -187,68 +159,54 @@ const handleSignProposal = async (proposalId, managerIndex) => {
     }
   } catch (error) {
     console.error('Signing failed:', error)
-    
-    // Provide more specific error messages
-    if (error.response?.status === 400) {
-      const errorMsg = error.response.data?.detail || error.message
-      if (errorMsg.includes('提案状态不允许签名')) {
-        alert('This proposal has already been executed by another manager.')
-      } else if (errorMsg.includes('已经签名过')) {
-        alert('You have already signed this proposal.')
-      } else {
-        alert(`Signing failed: ${errorMsg}`)
-      }
+      if (error.response?.status === 400) {
+        const errorMsg = error.response.data?.detail || error.message
+        if (errorMsg?.includes('提案状态不允许签名')) {
+          alert('This proposal has already been executed by another manager.')
+        } else if (errorMsg?.includes('已经签名过')) {
+          alert('You have already signed this proposal.')
+        } else if (errorMsg?.includes('marked invalid')) {
+          alert('This proposal no longer exists on-chain and has been marked invalid for reference.')
+        } else {
+          alert(`Signing failed: ${errorMsg}`)
+        }
     } else {
       alert('Signing failed. Please try again later.')
     }
-    
-    // Refresh to show current state
-    await refreshProposals()
   } finally {
     signingInProgress.value.delete(signingKey)
-    
-    // Resume auto-refresh after signing attempt
-    if (!refreshTimer) {
-      refreshTimer = setInterval(refreshProposals, 10000) // Increased to 10 seconds
+    if (!refreshed) {
+      await fetchOverview()
     }
   }
 }
 
-// Listen for role changes
 const handleRoleChange = (event) => {
   currentRole.value = event.detail.role
 }
 
-// Listen for demo mode changes
 const handleDemoModeChange = (event) => {
   isDemoMode.value = event.detail.isDemoMode
 }
 
-// Lifecycle
 onMounted(() => {
-  // Get current role and demo mode
   currentRole.value = localStorage.getItem('userRole') || 'operator_0'
   isDemoMode.value = localStorage.getItem('demoMode') === 'true'
-  
-  // Listen for role and demo mode changes
+
   window.addEventListener('roleChanged', handleRoleChange)
   window.addEventListener('demoModeChanged', handleDemoModeChange)
-  
-  // Initialize data
-  refreshProposals()
-  
-  // Regular refresh - reduced frequency during active signing
-  refreshTimer = setInterval(refreshProposals, 10000)
+
+  subscribe()
+  fetchOverview()
 })
 
 onUnmounted(() => {
-  if (refreshTimer) {
-    clearInterval(refreshTimer)
-  }
   window.removeEventListener('roleChanged', handleRoleChange)
   window.removeEventListener('demoModeChanged', handleDemoModeChange)
+  unsubscribe()
 })
 </script>
+
 
 <style scoped>
 .proposals-page {

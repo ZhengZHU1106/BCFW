@@ -189,21 +189,14 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { systemAPI } from '@/api/system'
 import AccountList from '@/components/AccountList.vue'
+import { useSystemOverviewStore } from '@/stores/systemOverviewStore'
 
-// System status
-const isConnected = ref(false)
-const blockHeight = ref(0)
-const networkStatus = ref('Checking...')
-const lastUpdate = ref('-')
+const systemOverviewStore = useSystemOverviewStore()
+const { state, subscribe, unsubscribe, fetchOverview } = systemOverviewStore
 
-// Account information
-const accounts = ref([])
-
-
-// Security flow status
 const securityFlowStages = ref([
   { id: 'monitoring', name: 'Monitoring' },
   { id: 'detection', name: 'Detection' },
@@ -211,160 +204,114 @@ const securityFlowStages = ref([
   { id: 'voting', name: 'Voting' },
   { id: 'execution', name: 'Execution' }
 ])
-const currentFlowStage = ref(0) // 0 = idle/monitoring, 1 = detection, etc.
+const currentFlowStage = ref(0)
 const currentFlowStatusText = ref('System Ready - Monitoring Network')
 const flowStatusClass = ref('idle')
-
-// Status update timers
 let stageTimer = null
+let checkingDetections = false
 
-// Reward Pool Management
-const rewardPoolInfo = ref({
-  success: false,
-  balance: 0,
-  base_reward: 0.01,
-  treasury_balance: 0
+const isConnected = computed(() => state.overview?.system_status?.blockchain_connected ?? false)
+const blockHeight = computed(() => state.overview?.system_status?.network?.block_number ?? 0)
+const networkStatus = computed(() => {
+  const status = state.overview?.system_status
+  if (!status) {
+    return 'Checking...'
+  }
+  return status.status || (status.blockchain_connected ? 'Operational' : 'Degraded')
 })
-const managerContributions = ref({})
+const lastUpdate = computed(() => {
+  if (state.overview?.generated_at) {
+    return new Date(state.overview.generated_at).toLocaleTimeString('en-US')
+  }
+  if (state.lastFetchedAt) {
+    return new Date(state.lastFetchedAt).toLocaleTimeString('en-US')
+  }
+  return '-'
+})
+
+const accounts = computed(() => {
+  const rawAccounts = state.overview?.system_status?.accounts || []
+  const accountByRole = (role) => rawAccounts.find((acc) => acc.role === role)
+
+  const buildAccount = (roleKey, displayName, badgeType) => {
+    const account = accountByRole(roleKey)
+    return {
+      name: displayName,
+      role: roleKey === 'treasury' ? 'System Treasury' : 'Manager',
+      type: badgeType,
+      address: account?.address || '-',
+      balance: account?.balance_eth ?? 0
+    }
+  }
+
+  return [
+    buildAccount('manager_0', 'Manager 0', 'info'),
+    buildAccount('manager_1', 'Manager 1', 'info'),
+    buildAccount('manager_2', 'Manager 2', 'info'),
+    buildAccount('treasury', 'Treasury', 'warning')
+  ]
+})
+
+const rewardPoolInfo = computed(() => {
+  const rewardPool = state.overview?.reward_pool || {}
+  const poolInfo = rewardPool.pool_info || {}
+  const treasuryBalance = (
+    poolInfo.treasury_balance ?? state.overview?.system_status?.account_balances?.treasury ?? 0
+  )
+
+  return {
+    success: rewardPool.success ?? false,
+    balance: poolInfo.balance ?? 0,
+    base_reward: poolInfo.base_reward ?? 0.01,
+    treasury_balance: treasuryBalance
+  }
+})
+
+const managerContributions = computed(() => state.overview?.manager_contributions?.contributions || {})
+
+const pendingProposalCount = computed(() => {
+  const summary = state.overview?.proposals?.summary
+  if (summary && typeof summary.pending === 'number') {
+    return summary.pending
+  }
+  const pendingList = state.overview?.proposals?.pending
+  return Array.isArray(pendingList) ? pendingList.length : 0
+})
+
 const depositAmount = ref(0.1)
 const isDepositing = ref(false)
 const withdrawAmount = ref(1.0)
 const withdrawToRole = ref('operator_0')
 const isWithdrawing = ref(false)
 
-// Timer
-let statusTimer = null
-
-// 获取系统状态
-const fetchSystemStatus = async () => {
-  try {
-    console.log('Fetching system status...')
-    const result = await systemAPI.getStatus()
-    console.log('API Response:', result)
-
-    // Backend response format: {success: true, data: {...}, message: "..."}
-    // API client has already extracted response.data, so result is the full response body
-    const status = result.data
-
-    isConnected.value = status.network?.is_connected || false
-    blockHeight.value = status.network?.block_number || 0
-    networkStatus.value = status.network?.is_connected ? 'Running' : 'Connection Failed'
-
-    // Update account information
-    if (status.accounts && Array.isArray(status.accounts)) {
-      const managerAccounts = status.accounts.filter(acc => acc.role.startsWith('manager'))
-      const treasuryAccount = status.accounts.find(acc => acc.role === 'treasury')
-
-      accounts.value = [
-        {
-          name: 'Manager 0',
-          role: 'Manager',
-          type: 'info',
-          address: managerAccounts[0]?.address,
-          balance: managerAccounts[0]?.balance_eth
-        },
-        {
-          name: 'Manager 1',
-          role: 'Manager',
-          type: 'info',
-          address: managerAccounts[1]?.address,
-          balance: managerAccounts[1]?.balance_eth
-        },
-        {
-          name: 'Manager 2',
-          role: 'Manager',
-          type: 'info',
-          address: managerAccounts[2]?.address,
-          balance: managerAccounts[2]?.balance_eth
-        },
-        {
-          name: 'Treasury',
-          role: 'System Treasury',
-          type: 'warning',
-          address: treasuryAccount?.address,
-          balance: treasuryAccount?.balance_eth
-        }
-      ]
+watch(
+  () => state.overview,
+  (overview) => {
+    if (!overview) {
+      return
     }
+    syncSecurityFlow()
+    checkRecentDetections()
+  },
+  { immediate: true }
+)
 
-    lastUpdate.value = new Date().toLocaleTimeString('en-US')
-
-    // Fetch reward pool info
-    await fetchRewardPoolInfo()
-    await fetchManagerContributions()
-
-    // Check for recent system activity to update flow status
-    await checkSystemActivity()
-
-  } catch (error) {
-    console.error('Failed to fetch system status:', error)
-    console.error('Error details:', error.response?.data || error.message)
-
-    // 保留现有数据，只标记为disconnected
-    // 不要清空accounts、blockHeight等数据
-    if (isConnected.value === true) {
-      // 首次失败才标记为disconnected
-      isConnected.value = false
-      networkStatus.value = 'Connection Error'
-    }
-
-    // 如果是首次加载（无数据），尝试重试
-    if (accounts.value.length === 0) {
-      console.log('First load failed, retrying in 3s...')
-      setTimeout(fetchSystemStatus, 3000)
-    }
-  }
-}
-
-// Fetch reward pool information
-const fetchRewardPoolInfo = async () => {
-  try {
-    const result = await systemAPI.getRewardPoolInfo()
-    if (result.success) {
-      rewardPoolInfo.value = {
-        success: true,
-        balance: result.pool_info.balance || 0,
-        base_reward: result.pool_info.base_reward || 0.01,
-        treasury_balance: result.pool_info.treasury_balance || 0
-      }
-    } else {
-      rewardPoolInfo.value.success = false
-    }
-  } catch (error) {
-    console.error('Failed to fetch reward pool info:', error)
-    rewardPoolInfo.value.success = false
-  }
-}
-
-// Fetch manager contributions
-const fetchManagerContributions = async () => {
-  try {
-    const result = await systemAPI.getManagerContributions()
-    if (result.success) {
-      managerContributions.value = result.contributions || {}
-    }
-  } catch (error) {
-    console.error('Failed to fetch manager contributions:', error)
-    managerContributions.value = {}
-  }
-}
-
-// Refresh contributions manually
 const refreshContributions = async () => {
-  await fetchManagerContributions()
+  await fetchOverview()
 }
 
-// Deposit to reward pool
 const depositToPool = async () => {
-  if (isDepositing.value || !depositAmount.value) return
+  if (isDepositing.value || !depositAmount.value) {
+    return
+  }
 
   isDepositing.value = true
   try {
     const result = await systemAPI.depositToRewardPool('treasury', depositAmount.value)
     if (result.success) {
       alert(`Successfully deposited ${depositAmount.value} ETH to reward pool!`)
-      await fetchRewardPoolInfo()
-      depositAmount.value = 0.1 // Reset to default
+      depositAmount.value = 0.1
+      await fetchOverview()
     } else {
       alert(`Failed to deposit: ${result.error || 'Unknown error'}`)
     }
@@ -376,20 +323,19 @@ const depositToPool = async () => {
   }
 }
 
-// Withdraw from reward pool
 const withdrawFromPool = async () => {
-  if (isWithdrawing.value || !withdrawAmount.value || !withdrawToRole.value) return
+  if (isWithdrawing.value || !withdrawAmount.value || !withdrawToRole.value) {
+    return
+  }
 
   isWithdrawing.value = true
   try {
     const result = await systemAPI.withdrawFromRewardPool(withdrawToRole.value, withdrawAmount.value)
     if (result.success) {
       alert(`Successfully withdrew ${withdrawAmount.value} ETH from reward pool to ${withdrawToRole.value}!`)
-      await fetchRewardPoolInfo()
-      await fetchSystemStatus() // Refresh account balances
-      withdrawAmount.value = 1.0 // Reset to default
+      await fetchOverview()
     } else {
-      alert(`Failed to withdraw: ${result.error || 'Unknown error'}`)
+      alert(`Withdraw failed: ${result.error || 'Unknown error'}`)
     }
   } catch (error) {
     console.error('Withdraw failed:', error)
@@ -399,41 +345,53 @@ const withdrawFromPool = async () => {
   }
 }
 
-// 手动分配功能已移除 - 现在使用自动分配机制
-
-
-// Format address
 const formatAddress = (address) => {
-  if (!address) return '-'
+  if (!address || address === '-') {
+    return '-'
+  }
   return `${address.slice(0, 6)}...${address.slice(-4)}`
 }
 
-// Format balance
 const formatBalance = (balance) => {
-  if (balance === null || balance === undefined) return '0.0000'
+  if (balance === null || balance === undefined) {
+    return '0.0000'
+  }
   return parseFloat(balance).toFixed(4)
 }
 
-// Update security flow status
 const updateSecurityFlowStage = (stage, statusText, statusClass = null) => {
-  const stageIndex = securityFlowStages.value.findIndex(s => s.id === stage)
+  const stageIndex = securityFlowStages.value.findIndex((s) => s.id === stage)
   if (stageIndex !== -1) {
     currentFlowStage.value = stageIndex
     currentFlowStatusText.value = statusText
     flowStatusClass.value = statusClass || stage
-    
-    // Auto return to monitoring after some time for non-monitoring stages
+
     if (stage !== 'monitoring') {
       clearTimeout(stageTimer)
       stageTimer = setTimeout(() => {
         updateSecurityFlowStage('monitoring', 'System Ready - Monitoring Network', 'idle')
-      }, 15000) // Return to monitoring after 15 seconds
+      }, 15000)
     }
   }
 }
 
-// Check for recent system activity
-const checkSystemActivity = async () => {
+const syncSecurityFlow = () => {
+  if (pendingProposalCount.value > 0) {
+    updateSecurityFlowStage(
+      'voting',
+      `${pendingProposalCount.value} Active Proposals - Awaiting Signatures`,
+      'warning'
+    )
+  } else if (currentFlowStage.value === 0) {
+    updateSecurityFlowStage('monitoring', 'System Ready - Monitoring Network', 'idle')
+  }
+}
+
+const checkRecentDetections = async () => {
+  if (checkingDetections) {
+    return
+  }
+  checkingDetections = true
   try {
     const result = await systemAPI.getDetectionLogs()
     if (result.success && result.data.length > 0) {
@@ -441,8 +399,7 @@ const checkSystemActivity = async () => {
       const logTime = new Date(recentLog.detected_at)
       const now = new Date()
       const timeDiff = now - logTime
-      
-      // If there's activity within the last 30 seconds, update status accordingly
+
       if (timeDiff < 30000) {
         if (recentLog.response_level === 'automatic_response') {
           updateSecurityFlowStage('execution', 'Automatic Response Executed', 'active')
@@ -453,30 +410,28 @@ const checkSystemActivity = async () => {
         }
       }
     }
-    
-    // Also check for active proposals
-    const proposalsResult = await systemAPI.getProposals()
-    if (proposalsResult.success && proposalsResult.data.pending.length > 0) {
-      updateSecurityFlowStage('voting', `${proposalsResult.data.pending.length} Active Proposals - Awaiting Signatures`, 'warning')
-    }
   } catch (error) {
     console.error('Failed to check system activity:', error)
+  } finally {
+    checkingDetections = false
   }
 }
 
-// Lifecycle
 onMounted(() => {
-  fetchSystemStatus()
-  // Update status every 5 seconds
-  statusTimer = setInterval(fetchSystemStatus, 5000)
+  subscribe()
+  if (!state.overview) {
+    fetchOverview()
+  }
 })
 
 onUnmounted(() => {
-  if (statusTimer) {
-    clearInterval(statusTimer)
+  unsubscribe()
+  if (stageTimer) {
+    clearTimeout(stageTimer)
   }
 })
 </script>
+
 
 <style scoped>
 .dashboard {

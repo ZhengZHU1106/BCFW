@@ -2,16 +2,25 @@
 区块链智能安防平台 - FastAPI 主应用
 """
 import logging
-from datetime import datetime
+import threading
+import time
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends, HTTPException
+from datetime import datetime
+from functools import lru_cache
+from typing import Any, Dict, Tuple
+
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
-from backend.database.connection import init_database, get_db
+from backend.app.services import (
+    ProposalService,
+    RewardPoolService,
+    SystemInfoService,
+    ThreatDetectionService,
+)
 from backend.blockchain.web3_manager import init_web3_manager
-# AI模型已集成在服务层，无需单独初始化
-from backend.app.services import ThreatDetectionService, ProposalService, SystemInfoService, RewardPoolService
+from backend.database.connection import get_db, init_database
 
 # 配置日志
 logging.basicConfig(
@@ -86,11 +95,126 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 初始化服务
-threat_service = ThreatDetectionService()
-proposal_service = ProposalService()
-system_service = SystemInfoService()
-reward_pool_service = RewardPoolService()
+@lru_cache(maxsize=1)
+def _get_threat_detection_service() -> ThreatDetectionService:
+    return ThreatDetectionService()
+
+
+@lru_cache(maxsize=1)
+def _get_proposal_service() -> ProposalService:
+    return ProposalService()
+
+
+@lru_cache(maxsize=1)
+def _get_system_info_service() -> SystemInfoService:
+    return SystemInfoService()
+
+
+@lru_cache(maxsize=1)
+def _get_reward_pool_service() -> RewardPoolService:
+    return RewardPoolService()
+
+
+def get_threat_detection_service() -> ThreatDetectionService:
+    return _get_threat_detection_service()
+
+
+def get_proposal_service() -> ProposalService:
+    return _get_proposal_service()
+
+
+def get_system_info_service() -> SystemInfoService:
+    return _get_system_info_service()
+
+
+def get_reward_pool_service() -> RewardPoolService:
+    return _get_reward_pool_service()
+
+
+_SYSTEM_OVERVIEW_CACHE: Dict[str, Any] = {"data": None, "expires_at": 0.0}
+_SYSTEM_OVERVIEW_CACHE_LOCK = threading.Lock()
+_SYSTEM_OVERVIEW_TTL = 30.0  # seconds
+
+
+def _build_system_overview(db: Session) -> Dict[str, Any]:
+    system_service = get_system_info_service()
+    proposal_service = get_proposal_service()
+    reward_pool_service = get_reward_pool_service()
+
+    status = system_service.get_system_status(db)
+    pending = proposal_service.get_pending_proposals(db)
+    approved = proposal_service.get_approved_proposals(db)
+    rejected = proposal_service.get_rejected_proposals(db)
+    history = proposal_service.get_proposal_history(db, limit=20)
+
+    withdrawn = [p for p in history if p.get("status") == "withdrawn"]
+    invalid = [p for p in history if p.get("status") == "invalid"]
+
+    proposals = {
+        "pending": pending,
+        "approved": approved,
+        "rejected": rejected,
+        "history": history,
+        "latest_pending_id": pending[0]["id"] if pending else None,
+        "summary": {
+            "total": len(history),
+            "pending": len(pending),
+            "approved": len(approved),
+            "rejected": len(rejected),
+            "withdrawn": len(withdrawn),
+            "invalid": len(invalid)
+        }
+    }
+
+    reward_pool = reward_pool_service.get_reward_pool_info()
+    manager_contributions = reward_pool_service.get_manager_contributions()
+
+    from backend.database.models import ThreatDetectionLog
+
+    detection_logs = (
+        db.query(ThreatDetectionLog)
+        .order_by(ThreatDetectionLog.detected_at.desc())
+        .limit(50)
+        .all()
+    )
+    threats = [log.to_dict() for log in detection_logs]
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "system_status": status,
+        "proposals": proposals,
+        "reward_pool": reward_pool,
+        "manager_contributions": manager_contributions,
+        "threats": threats
+    }
+
+
+def get_system_overview_cached(db: Session) -> Tuple[Dict[str, Any], bool]:
+    """返回系统概览及缓存命中状态"""
+    now = time.monotonic()
+    with _SYSTEM_OVERVIEW_CACHE_LOCK:
+        cached = _SYSTEM_OVERVIEW_CACHE.get("data")
+        expires_at = _SYSTEM_OVERVIEW_CACHE.get("expires_at", 0.0)
+        if cached and now < expires_at:
+            return cached, True
+
+    overview = _build_system_overview(db)
+
+    with _SYSTEM_OVERVIEW_CACHE_LOCK:
+        _SYSTEM_OVERVIEW_CACHE["data"] = overview
+        _SYSTEM_OVERVIEW_CACHE["expires_at"] = now + _SYSTEM_OVERVIEW_TTL
+
+    return overview, False
+
+
+# ===== 共识模式管理 API =====
+
+
+def invalidate_system_overview_cache() -> None:
+    """手动失效系统概览缓存"""
+    with _SYSTEM_OVERVIEW_CACHE_LOCK:
+        _SYSTEM_OVERVIEW_CACHE["data"] = None
+        _SYSTEM_OVERVIEW_CACHE["expires_at"] = 0.0
 
 
 @app.get("/")
@@ -123,7 +247,8 @@ async def health_check():
 async def simulate_attack(db: Session = Depends(get_db)):
     """模拟攻击检测"""
     try:
-        result = threat_service.simulate_attack(db)
+        result = get_threat_detection_service().simulate_attack(db)
+        invalidate_system_overview_cache()
         return {
             "success": True,
             "data": result,
@@ -137,7 +262,8 @@ async def simulate_attack(db: Session = Depends(get_db)):
 async def simulate_medium_threat(db: Session = Depends(get_db)):
     """模拟中等威胁 - 专门生成需要提案的威胁（演示用）"""
     try:
-        result = threat_service.simulate_medium_threat(db)
+        result = get_threat_detection_service().simulate_medium_threat(db)
+        invalidate_system_overview_cache()
         return {
             "success": True,
             "data": result,
@@ -151,6 +277,7 @@ async def simulate_medium_threat(db: Session = Depends(get_db)):
 async def get_system_status(db: Session = Depends(get_db)):
     """获取系统状态"""
     try:
+        system_service = get_system_info_service()
         status = system_service.get_system_status(db)
         return {
             "success": True,
@@ -161,10 +288,27 @@ async def get_system_status(db: Session = Depends(get_db)):
         logger.error(f"获取系统状态失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/system/overview")
+async def get_system_overview(db: Session = Depends(get_db)):
+    """获取系统概览（带缓存）"""
+    try:
+        overview, cached = get_system_overview_cached(db)
+        message = "系统概览来自缓存" if cached else "系统概览已刷新"
+        return {
+            "success": True,
+            "data": overview,
+            "cached": cached,
+            "message": message
+        }
+    except Exception as e:
+        logger.error(f"获取系统概览失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/proposals")
 async def get_proposals(db: Session = Depends(get_db)):
     """获取提案列表"""
     try:
+        proposal_service = get_proposal_service()
         pending = proposal_service.get_pending_proposals(db)
         approved = proposal_service.get_approved_proposals(db)
         rejected = proposal_service.get_rejected_proposals(db)
@@ -186,7 +330,12 @@ async def get_proposals(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/proposals/{proposal_id}/sign")
-async def sign_proposal(proposal_id: int, manager_role: str, db: Session = Depends(get_db)):
+async def sign_proposal(
+    proposal_id: int,
+    manager_role: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
     """Manager签名提案"""
     try:
         # 验证manager_role
@@ -195,16 +344,25 @@ async def sign_proposal(proposal_id: int, manager_role: str, db: Session = Depen
             raise HTTPException(status_code=400, detail=f"无效的Manager角色: {manager_role}")
         
         # 使用ProposalService处理签名
-        result = proposal_service.sign_proposal(db, proposal_id, manager_role)
-        
+        proposal_service = get_proposal_service()
+        result = proposal_service.sign_proposal(
+            db,
+            proposal_id,
+            manager_role,
+            background_tasks=background_tasks
+        )
+
         # 检查ProposalService的返回结果
         if not result.get("success", False):
             raise ValueError(result.get("error", "签名失败"))
-        
+
+        invalidate_system_overview_cache()
+
+        response_message = "提案签名已提交，后台处理中" if result.get("status") == "processing" else "提案签名成功"
         return {
             "success": True,
             "data": result,
-            "message": "提案签名成功"
+            "message": response_message
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -226,7 +384,9 @@ async def reject_proposal(proposal_id: int, request: dict, db: Session = Depends
             raise HTTPException(status_code=400, detail=f"无效的Manager角色: {manager_role}")
         
         # 使用ProposalService处理拒绝
+        proposal_service = get_proposal_service()
         result = proposal_service.reject_proposal(db, proposal_id, manager_role)
+        invalidate_system_overview_cache()
         return {
             "success": True,
             "data": result,
@@ -252,9 +412,11 @@ async def create_manual_proposal(
         if not detection_id:
             raise ValueError("detection_id is required")
         
+        proposal_service = get_proposal_service()
         result = proposal_service.create_manual_proposal(
             db, detection_id, action, operator_role
         )
+        invalidate_system_overview_cache()
         return {
             "success": True,
             "data": result,
@@ -275,7 +437,9 @@ async def withdraw_proposal(proposal_id: int, request: dict, db: Session = Depen
         if not operator_role:
             raise ValueError("operator_role is required")
         
+        proposal_service = get_proposal_service()
         result = proposal_service.withdraw_proposal(db, proposal_id, operator_role)
+        invalidate_system_overview_cache()
         return {
             "success": True,
             "data": result,
@@ -392,6 +556,7 @@ async def fund_account(request: dict):
 async def test_reward_sending(from_role: str = "treasury", to_role: str = "manager_0"):
     """测试奖励发送功能"""
     try:
+        system_service = get_system_info_service()
         web3_manager = system_service.web3_manager
         
         # 检查账户余额
@@ -430,6 +595,7 @@ async def test_reward_sending(from_role: str = "treasury", to_role: str = "manag
 async def get_reward_pool_info():
     """获取奖金池信息"""
     try:
+        reward_pool_service = get_reward_pool_service()
         result = reward_pool_service.get_reward_pool_info()
         return {
             "success": result["success"],
@@ -445,6 +611,7 @@ async def get_reward_pool_info():
 async def get_manager_contributions():
     """获取Manager贡献记录"""
     try:
+        reward_pool_service = get_reward_pool_service()
         result = reward_pool_service.get_manager_contributions()
         return {
             "success": result["success"],
@@ -466,7 +633,9 @@ async def deposit_to_reward_pool(request_data: dict):
         if amount <= 0:
             raise HTTPException(status_code=400, detail="充值金额必须大于0")
 
+        reward_pool_service = get_reward_pool_service()
         result = reward_pool_service.deposit_to_reward_pool(from_role, amount)
+        invalidate_system_overview_cache()
         return {
             "success": result["success"],
             "message": result.get("message", "奖金池充值操作完成"),
@@ -486,6 +655,7 @@ async def deposit_to_reward_pool(request_data: dict):
 async def withdraw_from_reward_pool(request_data: dict):
     """从奖金池提取资金（Operator操作）"""
     try:
+        reward_pool_service = get_reward_pool_service()
         to_role = request_data.get("to_role")
         amount = request_data.get("amount")
 
@@ -498,6 +668,7 @@ async def withdraw_from_reward_pool(request_data: dict):
         result = reward_pool_service.withdraw_from_reward_pool(to_role, amount)
 
         if result.get("success"):
+            invalidate_system_overview_cache()
             return {
                 "success": True,
                 "message": result.get("message", "奖金池提取操作完成"),
@@ -522,7 +693,9 @@ async def withdraw_from_reward_pool(request_data: dict):
 async def test_auto_distribute():
     """测试自动分配机制"""
     try:
+        reward_pool_service = get_reward_pool_service()
         result = reward_pool_service._auto_distribute_on_execution()
+        invalidate_system_overview_cache()
         return {
             "success": True,
             "auto_distribution_result": result,
@@ -540,6 +713,7 @@ async def get_network_topology():
         from backend.config import NETWORK_CONFIG, GANACHE_CONFIG
         
         # 获取所有账户信息
+        system_service = get_system_info_service()
         accounts_info = system_service.web3_manager.get_all_accounts_info()
         
         # 转换为网络节点格式
@@ -577,6 +751,7 @@ async def get_network_topology():
 async def get_node_details(node_id: str, db: Session = Depends(get_db)):
     """获取节点详细信息"""
     try:
+        system_service = get_system_info_service()
         # 尝试获取账户基本信息来验证节点是否存在
         # 这支持静态配置的节点和动态创建的节点
         try:
@@ -637,7 +812,7 @@ async def simulate_attack_flow(request_data: dict, db: Session = Depends(get_db)
         confidence = request_data.get("confidence", 0.85)
         
         # 执行攻击检测
-        attack_result = threat_service.simulate_attack(db)
+        attack_result = get_threat_detection_service().simulate_attack(db)
         
         # 创建攻击流程步骤
         flow_steps = [
@@ -770,6 +945,7 @@ async def create_network_node(request_data: dict):
             node_id = f"{node_type}_{node_name}"
         
         # 从Treasury转账激活新账户
+        system_service = get_system_info_service()
         web3_manager = system_service.web3_manager
         treasury_info = web3_manager.get_account_info('treasury')
         
@@ -858,6 +1034,7 @@ async def cleanup_invalid_proposals(db: Session = Depends(get_db)):
 async def get_available_nodes():
     """获取可显示的隐藏节点列表"""
     try:
+        system_service = get_system_info_service()
         web3_manager = system_service.web3_manager
 
         # 获取当前隐藏的节点列表
@@ -908,6 +1085,7 @@ async def show_network_node(request_data: dict):
         if node_id not in HIDDEN_NODES:
             raise HTTPException(status_code=400, detail=f"节点{node_id}不在隐藏池中")
 
+        system_service = get_system_info_service()
         web3_manager = system_service.web3_manager
 
         # 显示节点
@@ -963,6 +1141,7 @@ async def hide_network_node(request_data: dict):
         if node_id not in HIDDEN_NODES:
             raise HTTPException(status_code=400, detail=f"核心节点{node_id}不能隐藏")
 
+        system_service = get_system_info_service()
         web3_manager = system_service.web3_manager
 
         # 隐藏节点
@@ -991,6 +1170,7 @@ async def remove_network_node(node_id: str):
         from backend.config import GANACHE_CONFIG
         
         # 检查节点是否存在
+        system_service = get_system_info_service()
         web3_manager = system_service.web3_manager
         if node_id not in web3_manager.accounts:
             raise HTTPException(status_code=404, detail=f"节点 {node_id} 不存在")

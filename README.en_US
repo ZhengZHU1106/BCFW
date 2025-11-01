@@ -1,0 +1,96 @@
+Welcome to DevLeChain Platform
+Before getting your hand dirty, please read the instruction in this file.
+
+System login credential:
+devlechain / devlechain
+
+Ethereum configuration:
+Geth and its toolset :			/home/devlechain/Applications/Ethereum
+Smart contract source code :		/home/devlechain/SmartContract
+Private chain and its data storage :	/home/devlechain/ChainData
+Preloaded Chain ID / Network ID :       20000
+Account Password for Preloaded Chain:   devlechain
+
+To start your private chain:
+1. Please double click the "Private Chain Kickstart" icon
+2. When the chain boots up, please enter the following command to enable smart mining.
+This small program allows the client to mine only if there's any transaction left.
+loadScript("/home/devlechain/Tools/smartMine.js")
+3. If you want to stop the private chain, please type exit to terminate the program.
+
+To directly test the message sending under Geth
+1. Ensure your private chain is booted.
+2. When the chain boots up, please enter the following command to load the guiding program
+loadScript("/home/devlechain/Tools/loadMessage/Message.js")
+3. Follow the on-screen guide to perform get() and set() function.
+
+To start the message sending over blockchain program
+1. Ensure your private chain is booted.
+2. Double click the ""Eclipse" icon.
+3. When the window "Select a directory as workspace" appears, click Launch.
+4. Click "messageApp" on the project explorer.
+5. Navigate src -> messageApp -> Messenger.java and double click.
+6. Click Run->Run on the top menu, or press Ctrl + F11 to evaluate.
+7. Interact with the program on the console area.
+
+To start the Bank smart contract application
+1. Ensure your private chain is booted.
+2. Double click the ""Eclipse" icon.
+3. When the window "Select a directory as workspace" appears, click Launch.
+4. Click "bankApp" on the project explorer.
+5. Navigate src -> bankApp -> BankMain.java and double click.
+6. Click Run->Run on the top menu, or press Ctrl + F11 to evaluate.
+7. Interact with the program on the console area.
+
+To start the PoW experiment application
+1. Double click the ""Eclipse" icon.
+2. When the window "Select a directory as workspace" appears, click Launch.
+3. Click "simplePoW" on the project explorer.
+4. Navigate src -> simplePoW -> SimplePoW.java and double click.
+5. Click Run->Run on the top menu, or press Ctrl + F11 to evaluate.
+6. Interact with the program on the console area.
+
+To debug a contract
+1. Double click the "Remix IDE" icon.
+2. On the left side, find "contract" folder, and list the folder
+3. Click on the contract you would like to debug.
+4. After fixing your code, click "Solidity Compiler" on the left side panel.
+5. Compile your contract.
+6. If the compiler finishes your code without any issue, click "Deploy and Run Transaction"
+7. You can test your contract by clicking the function you have proposed in your smart contract.
+
+To update your Ethereum and its toolset to the latest version
+1. Ensure that the virtual environment is connected to the Internet
+2. Run /home/devlechain/Applications/Ethereum/ethUpdater -u
+
+To update your Eclipse IDE and its toolset to the latest version:
+1. Ensure that the virtual environment is connected to the Internet
+2. Run /home/devlechain/Applications/Eclipse/ecUpdater -u
+
+If you like to create an manage your own Chain:
+1. Open a termianl, switch to /home/devlechain/ChainData directory:
+2. Run the following command:
+   createChain
+   initChain
+   bootChain
+   removeChain
+   All of these command support arguments and interactive interface, 
+   When no arguments are given, the program will print out help information.
+   
+Important note on using bootChain:
+Some functions of bootChain is still under heavy development, in which that after a chain is inited, you have to explicitly tell bootChain to make the "inited Chain" bootable:
+
+Supposed that you have just inited a chain with ID 30000, to make the chain bootable with network ID 30000:
+
+	./bootChain -b 30000 -w I -s "network_id=30000"
+
+In this case, the special network ID "I" is a invalid network ID,
+However, it is the flag to tell the program that such chain is just inited and have never being booted.
+
+You only have to do this step once for each newly created chain. 
+After that, you don't have to use -w I again.
+
+Have fun.
+
+Sincerely,
+Wolfgang Lang.

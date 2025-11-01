@@ -1,306 +1,307 @@
 #!/bin/bash
 
-# Blockchain-based Intelligent Security Platform - Unified System Management Script
-# Phase 8: Contract-Level Role Separation
+# DevLeChain Demo Orchestrator (PoA-only)
+# Launches the Clique chain, FastAPI backend, and Vue frontend for the demo.
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+set -u
+set -o pipefail
+IFS=$'\n\t'
 
-# Function to show usage
-show_usage() {
-    echo "🔧 Blockchain-based Intelligent Security Platform - System Management"
-    echo ""
-    echo "Usage: $0 [start|stop|restart|status]"
-    echo ""
-    echo "Commands:"
-    echo "  start    - Start all services (DevLeChain, Backend, Frontend)"
-    echo "  stop     - Stop all services and clean up"
-    echo "  restart  - Stop and then start all services"
-    echo "  status   - Check status of all services"
-    echo ""
-    echo "Phase 8: Contract-Level Role Separation"
-    echo "- Operators (operator_0 to operator_4): Create proposals"
-    echo "- Managers (manager_0 to manager_2): Sign proposals"
-    echo "- Smart contract enforces role boundaries"
-}
+BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$BASE_DIR"
 
-# Function to check if a command exists
+GETH_PATH="/home/devlechain/Applications/Ethereum/geth"
+PASSWORD_FILE="$BASE_DIR/.devlechain_keystore_password"
+CHAIN_RPC_PORT=8545
+
+LOG_DIR="$BASE_DIR/.logs"
+mkdir -p "$LOG_DIR"
+
+BLOCKCHAIN_LOG="$LOG_DIR/blockchain.log"
+BACKEND_LOG="$LOG_DIR/backend.log"
+FRONTEND_LOG="$LOG_DIR/frontend.log"
+
+BLOCKCHAIN_PID="$BASE_DIR/.blockchain.pid"
+BACKEND_PID="$BASE_DIR/.backend.pid"
+FRONTEND_PID="$BASE_DIR/.frontend.pid"
+
 command_exists() {
-    command -v "$1" >/dev/null 2>&1
+  command -v "$1" >/dev/null 2>&1
 }
 
-# Function to check if a port is in use
-port_in_use() {
-    local port=$1
-    if command_exists lsof; then
-        lsof -ti:$port > /dev/null 2>&1
-    else
-        netstat -an 2>/dev/null | grep ":$port " > /dev/null
-    fi
-}
-
-# Function to kill process by PID file
 kill_by_pid_file() {
-    local pid_file=$1
-    local service_name=$2
-    
-    if [ -f "$pid_file" ]; then
-        local pid=$(cat "$pid_file")
-        if kill -0 "$pid" 2>/dev/null; then
-            kill "$pid" 2>/dev/null
-            sleep 1
-            if kill -0 "$pid" 2>/dev/null; then
-                kill -9 "$pid" 2>/dev/null
-            fi
-            echo "✅ $service_name stopped (PID: $pid)"
-        else
-            echo "⚠️  $service_name was not running"
-        fi
-        rm -f "$pid_file"
+  local pid_file="$1"
+  local service_name="$2"
+
+  if [ -f "$pid_file" ]; then
+    local pid
+    pid=$(cat "$pid_file")
+    if kill -0 "$pid" 2>/dev/null; then
+      kill "$pid" 2>/dev/null || true
+      sleep 1
+      if kill -0 "$pid" 2>/dev/null; then
+        kill -9 "$pid" 2>/dev/null || true
+      fi
+      echo "✅ $service_name stopped (PID: $pid)"
     fi
+    rm -f "$pid_file"
+  fi
 }
 
-# Function to start the system
-start_system() {
-    echo "🚀 Starting Blockchain-based Intelligent Security Platform..."
-    echo "📋 Phase 8: Contract-Level Role Separation"
-    echo ""
-
-    # Check if required commands exist
-    for cmd in python3 npm; do
-        if ! command_exists "$cmd"; then
-            echo "❌ $cmd not found. Please install it first."
-            exit 1
-        fi
-    done
-
-    # Check if DevLeChain geth exists
-    if [ ! -f "/home/devlechain/Applications/Ethereum/geth" ]; then
-        echo "❌ DevLeChain geth not found at /home/devlechain/Applications/Ethereum/geth"
-        exit 1
-    fi
-
-    # Stop any existing services first
-    echo "🧹 Cleaning up any existing services..."
-    stop_system_quiet
-
-    # Step 1: Start DevLeChain blockchain
-    echo "🔗 Starting DevLeChain blockchain..."
-    /home/devlechain/Applications/Ethereum/geth \
-        --datadir /home/devlechain/ChainData/20000_20000_ethash_0 \
-        --networkid 20000 \
-        --http --http.addr 0.0.0.0 --http.port 8545 \
-        --http.api "eth,net,web3,personal,miner" \
-        --allow-insecure-unlock \
-        --nodiscover --maxpeers 0 \
-        --mine --miner.threads 1 > devlechain.log 2>&1 &
-
-    DEVLECHAIN_PID=$!
-    echo "$DEVLECHAIN_PID" > .devlechain.pid
-    echo "✅ DevLeChain started (PID: $DEVLECHAIN_PID)"
-
-    # Wait for DevLeChain to initialize
-    echo "⏳ Waiting for DevLeChain to initialize..."
-    sleep 10
-
-    # Verify DevLeChain is running
-    if ! curl -s -X POST http://127.0.0.1:8545 -H "Content-Type: application/json" \
-         -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' 2>/dev/null | grep -q '"result"'; then
-        echo "❌ DevLeChain failed to start properly"
-        stop_system_quiet
-        exit 1
-    fi
-    echo "✅ DevLeChain blockchain is running"
-
-    # Step 3: Start backend service
-    echo "🐍 Starting FastAPI backend..."
-    python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload > backend.log 2>&1 &
-    BACKEND_PID=$!
-    echo "$BACKEND_PID" > .backend.pid
-    echo "✅ Backend started (PID: $BACKEND_PID)"
-
-    # Step 4: Start frontend service
-    echo "🌐 Starting Vue.js frontend..."
-    cd frontend
-    npm run dev > ../frontend.log 2>&1 &
-    FRONTEND_PID=$!
-    echo "$FRONTEND_PID" > ../.frontend.pid
-    cd ..
-    echo "✅ Frontend started (PID: $FRONTEND_PID)"
-
-    # Wait for services to initialize
-    sleep 5
-
-    # Step 5: Verify system status
-    echo ""
-    echo "🔍 Verifying system status..."
-    check_status
-
-    echo ""
-    echo "🎉 System startup complete!"
-    echo "📊 Access URLs:"
-    echo "   - Frontend: http://localhost:5173"
-    echo "   - Backend API: http://localhost:8000"
-    echo "   - API Documentation: http://localhost:8000/docs"
-    echo "   - DevLeChain RPC: http://127.0.0.1:8545"
-    echo ""
-    echo "🛑 To stop the system, run: $0 stop"
+ensure_password_file() {
+  if [ ! -f "$PASSWORD_FILE" ]; then
+    echo "devlechain" > "$PASSWORD_FILE"
+  fi
 }
 
-# Function to stop the system (quiet version for internal use)
-stop_system_quiet() {
-    # Stop services using PID files
-    kill_by_pid_file ".frontend.pid" "Frontend"
-    kill_by_pid_file ".backend.pid" "Backend"
-    kill_by_pid_file ".devlechain.pid" "DevLeChain"
+load_config_value() {
+  local expr="$1"
+  python3 - <<PY
+from backend.config import get_blockchain_config
+cfg = get_blockchain_config()
+print(eval("cfg" + "$expr"))
+PY
+}
 
-    # Wait a bit for graceful shutdown
+get_validator_address() {
+  python3 - <<'PY'
+from backend.config import get_blockchain_config
+cfg = get_blockchain_config()
+print(cfg['accounts']['manager_0'])
+PY
+}
+
+kill_conflicting_processes() {
+  # Stop legacy PoW chain or any process occupying the RPC port
+  if command_exists lsof; then
+    local pids
+    pids=$(lsof -ti:"$CHAIN_RPC_PORT" 2>/dev/null || true)
+    if [ -n "$pids" ]; then
+      echo "⚠️  Port $CHAIN_RPC_PORT already in use. Terminating processes: $pids"
+      echo "$pids" | xargs kill -9 2>/dev/null || true
+      sleep 1
+    fi
+  fi
+
+  if pgrep -f "$GETH_PATH" >/dev/null 2>&1; then
+    echo "⚠️  Existing geth process detected. Stopping it first."
+    pkill -f "$GETH_PATH" 2>/dev/null || true
+    sleep 1
+  fi
+}
+
+check_prerequisites() {
+  if [ ! -f "$GETH_PATH" ]; then
+    echo "❌ geth binary not found at $GETH_PATH"
+    exit 1
+  fi
+
+  local data_dir
+  data_dir=$(load_config_value "['data_dir']")
+  if [ ! -d "$data_dir" ]; then
+    echo "❌ PoA data directory missing: $data_dir"
+    echo "   Run: python scripts/bootstrap_poa_demo.py"
+    exit 1
+  fi
+
+  local keystore_dir
+  keystore_dir=$(load_config_value "['keystore_dir']")
+  if [ ! -d "$keystore_dir" ] || [ -z "$(ls -A "$keystore_dir" 2>/dev/null)" ]; then
+    echo "❌ Keystore directory missing or empty: $keystore_dir"
+    exit 1
+  fi
+
+  local contract_config
+  contract_config=$(load_config_value "['contract_config_path']")
+  if [ ! -f "$contract_config" ]; then
+    echo "❌ Contract config not found: $contract_config"
+    echo "   Run: python scripts/bootstrap_poa_demo.py"
+    exit 1
+  fi
+}
+
+start_blockchain() {
+  check_prerequisites
+  kill_conflicting_processes
+  ensure_password_file
+
+  local data_dir
+  data_dir=$(load_config_value "['data_dir']")
+  local network_id
+  network_id=$(load_config_value "['network_id']")
+  local keystore_dir
+  keystore_dir=$(load_config_value "['keystore_dir']")
+  local validator
+  validator=$(get_validator_address)
+
+  echo "⚡ Starting DevLeChain PoA chain..."
+  echo "   Data Dir: $data_dir"
+  echo "   Chain ID: $network_id"
+  echo "   Validator: $validator"
+
+  "$GETH_PATH" \
+    --datadir "$data_dir" \
+    --keystore "$keystore_dir" \
+    --networkid "$network_id" \
+    --port 0 \
+    --maxpeers 0 \
+    --http --http.addr "0.0.0.0" --http.port "$CHAIN_RPC_PORT" \
+    --http.api "eth,net,web3,personal,clique" \
+    --http.corsdomain "*" \
+    --unlock "$validator" \
+    --password "$PASSWORD_FILE" \
+    --allow-insecure-unlock \
+    --mine \
+    --nodiscover \
+    > "$BLOCKCHAIN_LOG" 2>&1 &
+
+  echo $! > "$BLOCKCHAIN_PID"
+  sleep 2
+
+  if ps -p "$(cat "$BLOCKCHAIN_PID" 2>/dev/null)" >/dev/null 2>&1; then
+    echo "✅ PoA chain running (PID: $(cat "$BLOCKCHAIN_PID"))"
+  else
+    echo "❌ Failed to launch geth. See $BLOCKCHAIN_LOG"
+    exit 1
+  fi
+}
+
+stop_blockchain() {
+  kill_by_pid_file "$BLOCKCHAIN_PID" "Blockchain"
+  if pgrep -f "$GETH_PATH" >/dev/null 2>&1; then
+    pkill -f "$GETH_PATH" 2>/dev/null || true
+    sleep 1
+  fi
+}
+
+start_backend() {
+  echo "🐍 Starting FastAPI backend..."
+  ensure_password_file
+  python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload \
+    > "$BACKEND_LOG" 2>&1 &
+  echo $! > "$BACKEND_PID"
+  echo "✅ Backend running (PID: $(cat "$BACKEND_PID"))"
+}
+
+stop_backend() {
+  kill_by_pid_file "$BACKEND_PID" "Backend"
+  pkill -f "uvicorn" 2>/dev/null || true
+}
+
+start_frontend() {
+  echo "🌐 Starting Vue frontend..."
+  (cd frontend && npm run dev > "$FRONTEND_LOG" 2>&1 & echo $! > "$FRONTEND_PID")
+  echo "✅ Frontend running (PID: $(cat "$FRONTEND_PID"))"
+}
+
+stop_frontend() {
+  kill_by_pid_file "$FRONTEND_PID" "Frontend"
+  pkill -f "vite" 2>/dev/null || true
+  pkill -f "npm.*dev" 2>/dev/null || true
+}
+
+stop_all() {
+  stop_frontend
+  stop_backend
+  stop_blockchain
+  rm -f "$BLOCKCHAIN_LOG" "$BACKEND_LOG" "$FRONTEND_LOG"
+}
+
+status_report() {
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "📡 Service Status"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  if [ -f "$BLOCKCHAIN_PID" ] && ps -p "$(cat "$BLOCKCHAIN_PID")" >/dev/null 2>&1; then
+    echo "✅ Blockchain: running (PID $(cat "$BLOCKCHAIN_PID"))"
+  else
+    echo "❌ Blockchain: stopped"
+  fi
+
+  if [ -f "$BACKEND_PID" ] && ps -p "$(cat "$BACKEND_PID")" >/dev/null 2>&1; then
+    echo "✅ Backend: running (PID $(cat "$BACKEND_PID"))"
+  else
+    echo "❌ Backend: stopped"
+  fi
+
+  if [ -f "$FRONTEND_PID" ] && ps -p "$(cat "$FRONTEND_PID")" >/dev/null 2>&1; then
+    echo "✅ Frontend: running (PID $(cat "$FRONTEND_PID"))"
+  else
+    echo "❌ Frontend: stopped"
+  fi
+
+  if command_exists curl; then
+    local block_hex
+    block_hex=$(curl -s -X POST http://127.0.0.1:"$CHAIN_RPC_PORT" -H "Content-Type: application/json" \
+      -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' 2>/dev/null |
+      sed -n 's/.*"result":"\(.*\)".*/\1/p')
+    if [ -n "$block_hex" ]; then
+      echo "ℹ️  Latest block: $block_hex"
+    fi
+  fi
+}
+
+show_usage() {
+  cat <<USAGE
+🔧 DevLeChain Demo Control (PoA)
+
+Usage: $0 {start|stop|restart|status|blockchain}
+
+Commands:
+  start       Start blockchain, backend, and frontend
+  stop        Stop all services
+  restart     Restart all services
+  status      Show service status
+  blockchain  Control blockchain only (start|stop|restart|status)
+USAGE
+}
+
+case "${1:-}" in
+  start)
+    stop_blockchain
+    start_blockchain
+    start_backend
+    start_frontend
+    ;;
+  stop)
+    stop_all
+    ;;
+  restart)
+    stop_all
     sleep 2
-
-    # Force kill any remaining processes - more aggressive approach
-    processes_to_kill=("uvicorn" "vite" "geth" "python.*uvicorn" "npm.*dev")
-    for process in "${processes_to_kill[@]}"; do
-        if pgrep -f "$process" > /dev/null; then
-            pkill -f "$process" 2>/dev/null
-            sleep 2
-            if pgrep -f "$process" > /dev/null; then
-                pkill -9 -f "$process" 2>/dev/null
-            fi
-        fi
-    done
-
-    # Kill by port - more thorough approach
-    ports_to_free=(8545 8000 5173 3000 4000 5000 8080 8888)
-    for port in "${ports_to_free[@]}"; do
-        # Use lsof to kill processes using specific ports
-        if command_exists lsof; then
-            # Get all PIDs using the port
-            local pids=$(lsof -ti:$port 2>/dev/null)
-            if [ ! -z "$pids" ]; then
-                echo "$pids" | xargs kill -9 2>/dev/null
-            fi
-        fi
-    done
-
-    # Additional wait for port release
-    sleep 3
-
-    # Verify critical ports are free
-    for port in 8545 8000 5173; do
-        if command_exists lsof && lsof -ti:$port > /dev/null 2>&1; then
-            echo "⚠️  Warning: Port $port still in use, attempting final cleanup..."
-            lsof -ti:$port | xargs kill -9 2>/dev/null
-            sleep 1
-        fi
-    done
-
-    # Clean up files
-    rm -f devlechain.log backend.log frontend.log *.log
-    rm -f .devlechain.pid .backend.pid .frontend.pid .*.pid
-}
-
-# Function to stop the system (with output)
-stop_system() {
-    echo "🛑 Stopping Blockchain-based Intelligent Security Platform..."
-    echo ""
-
-    stop_system_quiet
-
-    sleep 2
-
-    echo ""
-    echo "🎉 System shutdown complete!"
-    echo "📋 All services have been stopped and cleaned up."
-
-    # Final verification
-    echo ""
-    echo "🔍 Final verification:"
-    if command_exists lsof; then
-        for port in 8545 8000 5173; do
-            if lsof -ti:$port > /dev/null 2>&1; then
-                echo "⚠️  Warning: Port $port is still in use"
-            else
-                echo "✅ Port $port is free"
-            fi
-        done
-    else
-        echo "⚠️  Cannot verify port status (lsof not available)"
-    fi
-}
-
-# Function to check system status
-check_status() {
-    echo "🔍 System Status Check:"
-    echo ""
-
-    # Check DevLeChain
-    if port_in_use 8545; then
-        if curl -s -m 5 http://127.0.0.1:8545 -X POST -H "Content-Type: application/json" \
-           -d '{"jsonrpc":"2.0","method":"net_version","params":[],"id":1}' 2>/dev/null | grep -q '"result"'; then
-            echo "✅ DevLeChain blockchain: Running (Port 8545)"
-        else
-            echo "⚠️  DevLeChain blockchain: Port occupied but not responding correctly"
-        fi
-    else
-        echo "❌ DevLeChain blockchain: Not running"
-    fi
-
-    # Check Backend
-    if port_in_use 8000; then
-        if curl -s http://localhost:8000/health 2>/dev/null | grep -q "healthy"; then
-            echo "✅ Backend API: Running (Port 8000)"
-        else
-            echo "⚠️  Backend API: Port occupied but not responding correctly"
-        fi
-    else
-        echo "❌ Backend API: Not running"
-    fi
-
-    # Check Frontend
-    if port_in_use 5173; then
-        if curl -s http://localhost:5173 2>/dev/null | grep -q "vite"; then
-            echo "✅ Frontend: Running (Port 5173)"
-        else
-            echo "⚠️  Frontend: Port occupied but not responding correctly"
-        fi
-    else
-        echo "❌ Frontend: Not running"
-    fi
-
-    echo ""
-    echo "📊 Access URLs (if running):"
-    echo "   - Frontend: http://localhost:5173"
-    echo "   - Backend API: http://localhost:8000"
-    echo "   - API Documentation: http://localhost:8000/docs"
-    echo "   - DevLeChain RPC: http://127.0.0.1:8545"
-}
-
-# Function to restart the system
-restart_system() {
-    echo "🔄 Restarting Blockchain-based Intelligent Security Platform..."
-    echo ""
-    
-    stop_system_quiet
-    sleep 3
-    start_system
-}
-
-# Main script logic
-case "$1" in
-    start)
-        start_system
+    start_blockchain
+    start_backend
+    start_frontend
+    ;;
+  status)
+    status_report
+    ;;
+  blockchain)
+    sub=${2:-status}
+    case "$sub" in
+      start)
+        stop_blockchain
+        start_blockchain
         ;;
-    stop)
-        stop_system
+      stop)
+        stop_blockchain
         ;;
-    restart)
-        restart_system
+      restart)
+        stop_blockchain
+        sleep 1
+        start_blockchain
         ;;
-    status)
-        check_status
+      status)
+        status_report
         ;;
-    *)
+      *)
         show_usage
         exit 1
         ;;
-esac
+    esac
+    ;;
+  *)
+    show_usage
+    exit 1
+    ;;
+ esac

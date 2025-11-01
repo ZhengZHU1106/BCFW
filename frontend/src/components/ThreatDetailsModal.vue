@@ -137,6 +137,10 @@ const props = defineProps({
   currentRole: {
     type: String,
     default: 'operator_0'
+  },
+  isDemoMode: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -167,7 +171,7 @@ const getTopProbabilities = (detectionData) => {
 const canCreateProposal = (threat) => {
   // Check if current role is an operator role
   const isOperator = props.currentRole.startsWith('operator')
-  if (!isOperator) return false
+  if (!isOperator && !props.isDemoMode) return false
   
   // Allow proposal creation for threats that haven't been automatically processed
   const allowedResponseLevels = ['manual_decision_alert', 'silent_logging']

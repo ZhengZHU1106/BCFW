@@ -1,11 +1,14 @@
+import json
+import os
+import pickle
+import threading
+
+import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
-import pandas as pd
-import pickle
-import json
-import os
+
 from model_architecture import TransformerEnhancedEnsembleModel
 
 class HierarchicalPredictor:
@@ -13,9 +16,24 @@ class HierarchicalPredictor:
         self.model_package_path = model_package_path
         self.device = torch.device(device)
         self.debug = debug
-        self._load_model()
+        self._model_initialized = False
+        self._model_lock = threading.Lock()
+
+        # Attributes populated after the first load
+        self.model_info = {}
+        self.scaler = None
+        self.label_encoders = {}
+        self.feature_names = []
+        self.quantile_thresholds = {}
+        self.binary_model = None
+        self.multi_model = None
+        self.binary_classes = []
+        self.multi_classes = []
 
     def _load_model(self):
+        if self._model_initialized:
+            return
+
         if self.debug:
             print(f"[Predictor] Loading model from: {self.model_package_path}")
 
@@ -68,7 +86,20 @@ class HierarchicalPredictor:
         if self.debug:
             print("[Predictor] Model loaded successfully.")
 
+        self._model_initialized = True
+
+    def _ensure_model_loaded(self):
+        if self._model_initialized:
+            return
+
+        with self._model_lock:
+            if self._model_initialized:
+                return
+            self._load_model()
+
     def _preprocess(self, df: pd.DataFrame) -> torch.Tensor:
+        self._ensure_model_loaded()
+
         # Validate and prepare features
         df = df.copy()
         df.columns = [col.strip() for col in df.columns]
@@ -99,6 +130,8 @@ class HierarchicalPredictor:
         return torch.from_numpy(scaled_data).float().to(self.device)
 
     def predict(self, dataframe: pd.DataFrame):
+        self._ensure_model_loaded()
+
         input_tensor = self._preprocess(dataframe)
 
         with torch.no_grad():

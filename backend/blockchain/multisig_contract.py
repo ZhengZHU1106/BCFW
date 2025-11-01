@@ -10,6 +10,8 @@ from typing import Dict, Any, Optional
 import logging
 from web3.exceptions import ContractLogicError
 
+from ..config import get_deployed_contract
+
 logger = logging.getLogger(__name__)
 
 class MultiSigContract:
@@ -36,18 +38,30 @@ class MultiSigContract:
     def _load_deployed_contract(self) -> Dict[str, Any]:
         """Load deployed contract info from JSON"""
         try:
-            contract_path = os.path.join(
-                os.path.dirname(__file__),
-                '../assets/deployed_contract.json'
-            )
-            with open(contract_path, 'r') as f:
-                contract_info = json.load(f)
+            contract_info = get_deployed_contract()
 
-            logger.info(f"✅ Deployed contract info loaded")
+            # 部署信息可能不包含 ABI，此处兜底加载
+            if "abi" not in contract_info or not contract_info["abi"]:
+                abi_path = os.path.join(
+                    os.path.dirname(__file__),
+                    '../assets/multisig_abi.json'
+                )
+                with open(abi_path, 'r', encoding='utf-8') as abi_file:
+                    contract_info["abi"] = json.load(abi_file)
+
+            logger.info(
+                "✅ Deployed contract info loaded\n"
+                f"   Address: {contract_info.get('address')}\n"
+                f"   Mode: {contract_info.get('mode', 'poa')}"
+            )
             return contract_info
 
-        except Exception as e:
-            logger.error(f"❌ Failed to load deployed contract: {e}")
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(
+                f"Contract configuration not found for PoA demo: {exc}"
+            ) from exc
+        except Exception as exc:
+            logger.error(f"❌ Failed to load deployed contract: {exc}")
             raise
 
     def create_proposal(self, target: str, amount: float, data: str = "0x", creator_role: str = None) -> Dict[str, Any]:
@@ -266,20 +280,30 @@ class MultiSigContract:
             # Call getProposal function
             result = self.contract.functions.getProposal(proposal_id).call()
 
-            # Parse result tuple: (id, target, amount, executed, rejected, rejectedBy, signatureCount, creator, createdAt)
-            # Check if result is valid (proposal ID >= 0 is valid)
-            if result and result[1] != '0x0000000000000000000000000000000000000000':  # Check target address
+            if result and len(result) >= 4:
+                target = result[1]
+                if target == '0x0000000000000000000000000000000000000000':
+                    return None
+
+                if len(result) >= 9:
+                    _, _, amount_wei, executed, rejected, rejected_by, signature_count, creator, created_at = result
+                else:
+                    # Legacy contract with 7 fields (id, target, amount, executed, signatureCount, creator, createdAt)
+                    _, _, amount_wei, executed, signature_count, creator, created_at = result[:7]
+                    rejected = False
+                    rejected_by = None
+
                 return {
                     "id": result[0],
-                    "target": result[1],
-                    "amount": self.w3.from_wei(result[2], 'ether'),
-                    "amount_wei": result[2],
-                    "executed": result[3],
-                    "rejected": result[4],
-                    "rejected_by": result[5] if result[5] != '0x0000000000000000000000000000000000000000' else None,
-                    "signature_count": result[6],
-                    "creator": result[7],
-                    "created_at": datetime.fromtimestamp(result[8]).isoformat() if result[8] > 0 else None,
+                    "target": target,
+                    "amount": self.w3.from_wei(amount_wei, 'ether'),
+                    "amount_wei": amount_wei,
+                    "executed": executed,
+                    "rejected": rejected,
+                    "rejected_by": rejected_by if rejected_by and rejected_by != '0x0000000000000000000000000000000000000000' else None,
+                    "signature_count": signature_count,
+                    "creator": creator,
+                    "created_at": datetime.fromtimestamp(created_at).isoformat() if created_at and created_at > 0 else None,
                     "contract_address": self.contract_address
                 }
             else:
@@ -634,20 +658,18 @@ class MultiSigContract:
     def _get_proposal_id_from_receipt(self, receipt) -> int:
         """Extract proposal ID from transaction receipt events"""
         try:
-            # Get ProposalCreated event
-            event_signature_hash = self.w3.keccak(text="ProposalCreated(uint256,address,address,uint256)")
+            events = self.contract.events.ProposalCreated().process_receipt(receipt)
+            if events:
+                return int(events[0]['args']['proposalId'])
 
-            for log in receipt.logs:
-                if log.topics[0] == event_signature_hash:
-                    # First topic is proposal ID (indexed)
-                    proposal_id = int(log.topics[1].hex(), 16)
-                    return proposal_id
-
-            # Fallback: get from proposalCount
+            # Fallback: use latest proposalCount (count is total proposals)
             proposal_count = self.contract.functions.proposalCount().call()
-            return proposal_count
+            if proposal_count == 0:
+                raise ValueError("No proposals found on-chain after creation receipt")
+            return proposal_count - 1
 
         except Exception as e:
             logger.warning(f"⚠️  Could not extract proposal ID from receipt: {e}")
             # Return latest proposal count
-            return self.contract.functions.proposalCount().call()
+            proposal_count = self.contract.functions.proposalCount().call()
+            return proposal_count - 1 if proposal_count else 0

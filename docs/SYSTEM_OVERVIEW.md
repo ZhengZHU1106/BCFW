@@ -61,12 +61,20 @@ BCFW (Blockchain Firewall) 是一个集成了人工智能（AI）与区块链技
 **3.5. 历史与审计**
 `History.vue`页面提供了所有威胁检测日志和响应执行日志的完整列表，并以图表形式对攻击类型、置信度分布等进行了可视化分析，实现了完整的可追溯性。
 
-**3.6. 置信度解释系统 (Phase 16新增)**
+**3.6. 运维工具与演示重置 (PoA 专用)**
+- **环境重置**：`./scripts/reset_poa_demo.sh` 会停止当前 geth、备份 `security_platform.db` 与合约配置到 `.backups/<timestamp>/`，并清空仓库根目录下的 `.poa_chain/` 数据目录，为全新演示做准备。
+- **一键引导**：`python3 scripts/bootstrap_poa_demo.py --force` 从干净状态重新生成 `genesis_poa.json`（存放于 `.poa_chain/`）、初始化数据目录，并部署多签合约（含角色与奖金池初始化）。
+- **一致性巡检**：`python3 scripts/validate_proposals.py` 对比数据库中提案的 `contract_proposal_id` 与链上真实数据；`--fix` 可将缺失的提案标记为 `invalid`，前端会以警告标签展示且禁用操作。
+- **前端反馈**：`Proposals` 视图新增 `Invalid` 状态统计，`ProposalCard` 为失效提案显示“⚠️ Proposal Invalid”面板，避免再次尝试签名。
+- **签名行为调整**：所有提案在写入数据库前必须先确认链上交易成功，避免出现“数据库有、链上无”的孤立记录。
+- **ABI 兼容性**：`backend/blockchain/multisig_contract.py` 兼容旧版 7 字段与新版 9 字段 `getProposal` 返回值，确保历史提案在链上检索时不会被误判为丢失。
+
+**3.7. 置信度解释系统 (Phase 16新增)**
 *   **轻量级提示**: `ConfidenceTooltip.vue`组件提供悬停触发的tooltip，显示置信度计算公式和快速阈值参考。
 *   **详细解释**: 增强的模态框显示数学公式和详细参数解释。
 *   **用户体验优化**: 为有经验的用户减少中断，同时保留教育内容。
 
-**3.7. 已知技术限制**
+**3.8. 已知技术限制**
 *   **用户体验问题**: 提案签名后存在5秒延迟，这是由于同步奖励分配和区块链交易确认造成的。这个问题已在Phase 10计划中标记为优先解决项。
 *   **Withdraw功能**: 前端UI已实现，数据库模型支持，但后端服务层实现不完整。
 
